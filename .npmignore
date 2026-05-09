@@ -1,0 +1,21 @@
+# Development files
+.git/
+.github/
+.gitignore
+*.md
+!README.md
+
+# Test files
+test_*.json
+test/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
