@@ -90,7 +90,7 @@ async function main() {
     console.log('      - 检查网络连接');
     console.log('      - 检查是否需要代理/VPN');
     console.log('      - 检查防火墙设置\n');
-  } else if (successCount < 4) {
+  } else if (successCount < 5) {
     console.log('   ⚠️  部分 API 失败，可能的原因:');
     console.log('      - 该 API 可能暂时不可用');
     console.log('      - 触发了速率限制（稍后重试）');

@@ -31,6 +31,7 @@
   },
   "scripts": {
     "test": "node bin/lit-search.js --help",
+    "test:acceptance": "node test.js",
     "test:smoke": "node test.js",
     "diagnose": "node diagnose.js"
   },
