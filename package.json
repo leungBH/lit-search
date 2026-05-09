@@ -1,6 +1,6 @@
 {
   "name": "lit-search",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "学术文献检索 CLI - 搜索 Semantic Scholar, OpenAlex, arXiv, CrossRef（纯 Node.js 实现）",
   "keywords": [
     "literature",
