@@ -8,41 +8,59 @@
 
 ## 特性
 
-- **多数据源**：同时检索 5 大学术文献数据库
-- **去重合并**：自动去除重复文献
-- **BibTeX 格式**：输出标准 BibTeX 字段
+- **多数据源**：同时检索 5 大学术文献数据库（Semantic Scholar、OpenAlex、arXiv、CrossRef、CORE）
+- **去重合并**：基于 DOI 和标题相似度自动去除重复文献
+- **相关性排序**：按标题/摘要关键词匹配度 + 引用数综合排序
+- **查询展开**：支持 none / pairwise / full 三种多关键词组合策略
+- **检索范围控制**：支持 title-only / title-abstract / default-engine-search 三种匹配范围
+- **多格式输出**：Markdown（默认）、JSON、BibTeX，可直接导入 Zotero / EndNote / Mendeley
+- **丰富元数据**：标题、作者、年份、期刊、卷号、期号、页码、DOI、摘要、引用数、PDF 链接、关键词、学科领域、语言、作品类型等
+- **MCP 服务**：内置 stdio MCP 服务，可直接接入 Trae 等 AI 编程工具
 - **跨平台**：支持 Windows、macOS、Linux
-- **简单易用**：命令行操作，无需图形界面
 
 ## 支持的数据源
 
 | 数据源 | 覆盖范围 | 备注 |
 |--------|----------|------|
-| [OpenAlex](https://openalex.org/) | 全球学术文献 | 主要数据源，稳定性好 |
+| [Semantic Scholar](https://www.semanticscholar.org/) | 学术论文 | AI 驱动的学术搜索引擎，支持 TLDR 摘要 |
+| [OpenAlex](https://openalex.org/) | 全球学术文献 | 主要数据源，稳定性好，字段最丰富 |
 | [arXiv](https://arxiv.org/) | 预印本论文 | 涵盖物理、数学、计算机科学等领域 |
-| [CrossRef](https://www.crossref.org/) | 学术期刊文章 | DOI 收录全面 |
+| [CrossRef](https://www.crossref.org/) | 学术期刊文章 | DOI 收录全面，期刊元数据最完整 |
 | [CORE](https://core.ac.uk/) | 开放获取论文 | 专注开放获取资源 |
-| [Semantic Scholar](https://www.semanticscholar.org/) | 学术论文 | AI 驱动的学术搜索引擎 |
 
 ## 各数据源字段支持对比
 
-| 字段 | OpenAlex | arXiv | CrossRef | CORE | Semantic Scholar |
-|------|:--------:|:-----:|:--------:|:----:|:----------------:|
+| 字段 | Semantic Scholar | OpenAlex | arXiv | CrossRef | CORE |
+|------|:---:|:---:|:---:|:---:|:---:|
 | **标题 (title)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **作者 (author)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **作者 (authors)** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **年份 (year)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **期刊 (journal)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **期刊/来源 (journal)** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **DOI** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **摘要 (abstract)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **引用数 (citationCount)** | ✅ | ❌ | ✅ | ✅ | ✅ |
+| **引用数 (citationCount)** | ✅ | ✅ | ❌ | ✅ | ✅ |
 | **PDF 链接 (pdfUrl)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **TLDR/简短摘要** | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **关键词 (keywords)** | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **卷号 (volume)** | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **期号 (issue)** | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **页码 (pages)** | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **出版商 (publisher)** | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **关键词 (keywords)** | ✅¹ | ✅ | ✅² | ✅³ | ✅⁴ |
+| **学科领域 (fieldsOfStudy)** | ✅ | ✅⁵ | ❌ | ❌ | ✅⁴ |
+| **语言 (language)** | ❌ | ✅ | ❌ | ✅ | ❌ |
+| **作品类型 (workType)** | ✅ | ✅ | ❌ | ✅ | ✅ |
+| **TLDR 摘要** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **arXiv ID** | ✅⁶ | ✅⁶ | ✅ | ❌ | ✅⁶ |
+| **ISSN** | ❌ | ❌ | ❌ | ✅ | ❌ |
+| **ISBN** | ❌ | ❌ | ❌ | ✅ | ❌ |
+| **主分类 (primaryCategory)** | ❌ | ❌ | ✅ | ❌ | ❌ |
 
-> **注意**：
-> - 所有数据源均支持搜索，但返回的字段有所不同
-> - 引用数 (citationCount) 在各数据源中的含义可能不同（有些是总引用数，有些是该来源的引用数）
-> - PDF 链接可能需要权限或付费才能访问
+> **注释**：
+> - ¹ Semantic Scholar 的 keywords 来自 fieldsOfStudy
+> - ² arXiv 的 keywords 来自论文分类标签 (categories)
+> - ³ CrossRef 的 keywords 来自 subjects 字段
+> - ⁴ CORE 的 keywords/fieldsOfStudy 来自 fieldOfStudy 字段
+> - ⁵ OpenAlex 的 fieldsOfStudy 来自 topics 字段
+> - ⁶ 通过 externalIds / identifiers 返回
 
 ## 安装
 
@@ -148,13 +166,15 @@ node bin/lit-search-mcp.js
 
 工具参数：
 
-- `query`
-- `limit`
-- `yearStart`
-- `yearEnd`
-- `format`
-- `queryExpansion`
-- `searchScope`
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `query` | string | ✅ | - | 搜索词，多个关键词用逗号分隔 |
+| `limit` | number | ❌ | 3 | 每个关键词、每个数据源的检索上限 |
+| `yearStart` | number | ❌ | - | 起始年份（包含） |
+| `yearEnd` | number | ❌ | - | 结束年份（包含） |
+| `format` | string | ❌ | md | 输出格式：md / json / bib |
+| `queryExpansion` | string | ❌ | none | 查询展开策略：none / pairwise / full |
+| `searchScope` | string | ❌ | default-engine-search | 检索范围：title-only / title-abstract / default-engine-search |
 
 ### Trae 配置示例
 
@@ -252,14 +272,6 @@ AI, coding, agent
 - `title-abstract`：只保留标题或摘要命中的结果
 - `default-engine-search`：使用各文献源的默认搜索策略
 
-说明：
-
-- `arXiv` 会显式使用字段查询：`ti:` / `abs:`
-- `CrossRef` 的 `title-only` 会使用 `query.title`
-- `OpenAlex` 会显式使用字段查询：`title.search` / `title_and_abstract.search`
-- `Semantic Scholar` 当前没有公开的 `title-only` 独立参数；`title-only` 通过默认检索后本地过滤实现，`title-abstract` 与其默认搜索行为基本一致
-- `CORE` 当前未接入公开字段级搜索参数，`title-only` / `title-abstract` 通过默认检索后本地过滤实现
-
 各文献源支持情况：
 
 | 文献源 | title-only | title-abstract | default-engine-search |
@@ -300,11 +312,11 @@ lit-search [关键词] [选项]
 
 选项:
   -l, --limit <n>         每个关键词、每个数据源的检索上限（默认: 3）
-  -s, --since <year>     起始年份（包含）
-  -u, --until <year>     结束年份（包含）
-  --format <mode>        输出格式：md|json|bib（默认: md）
-  --expand <mode>        查询展开策略：none|pairwise|full（默认: none）
-  --search-scope <mode>  检索范围：title-only|title-abstract|default-engine-search
+  -s, --since <year>      起始年份（包含）
+  -u, --until <year>      结束年份（包含）
+  --format <mode>         输出格式：md|json|bib（默认: md）
+  --expand <mode>         查询展开策略：none|pairwise|full（默认: none）
+  --search-scope <mode>   检索范围：title-only|title-abstract|default-engine-search
   -h, --help              显示帮助
   -v, --version           显示版本
 ```
@@ -330,36 +342,17 @@ lit-search "deep learning" -s 2020 -u 2024
 # 导出为 JSON
 lit-search "neural network" --format json
 
-# 导出为 BibTeX
+# 导出为 BibTeX（可直接导入 Zotero / EndNote / Mendeley）
 lit-search "neural network" --format bib
+
+# 两两组合展开
+lit-search "AI, coding, agent" -l 5 -s 2023 --expand pairwise
+
+# 全组合展开
+lit-search "retrieval, generation, augmentation" -l 8 -s 2021 --expand full
 
 # 查看帮助
 lit-search --help
-```
-
-### 多检索条件组合示例
-
-```bash
-# 多关键词 + 起始年份
-lit-search "AI, coding, agent" -l 5 -s 2023
-
-# 多关键词 + 两两组合展开
-lit-search "AI, coding, agent" -l 5 -s 2023 --expand pairwise
-
-# 多关键词 + 不自动组合
-lit-search "AI, coding, agent" -l 5 -s 2023 --expand none
-
-# 多关键词 + 完整年份区间
-lit-search "retrieval augmented generation, llm" -l 8 -s 2021 -u 2024
-
-# 多关键词 + 年份区间 + 导出 JSON
-lit-search "graph neural network, recommendation" -l 10 -s 2020 -u 2024 --format json
-
-# 单关键词 + 高检索上限，适合做综述初筛
-lit-search "diffusion model" -l 20 -s 2021
-
-# 单关键词 + 截止年份，适合查经典文献
-lit-search "support vector machine" -l 10 -u 2015
 ```
 
 ## 输出格式
@@ -370,32 +363,41 @@ lit-search "support vector machine" -l 10 -u 2015
 
 Markdown 文件包含：
 
-- 检索摘要
-- 各引擎命中统计
+- 检索摘要（查询词、展开策略、年份范围等）
+- 各引擎命中统计表
 - 每篇文献的详细字段列表
 
-字段会尽量补充为：
+每篇文献包含的字段：
 
-- 标题
-- 作者
-- 年份
-- 期刊 / 会议 / 来源
-- 卷号、期号、页码
-- DOI
-- 原文链接 / PDF 链接
-- 摘要
-- 关键词 / 学科 / 主题
-- 引用次数
+| 字段 | 说明 |
+|------|------|
+| Authors | 作者列表 |
+| Year | 出版年份 |
+| Source | 数据来源 |
+| Journal/Venue | 期刊/会议名称 |
+| Volume/Issue/Pages | 卷号、期号、页码 |
+| DOI | DOI 标识符 |
+| URL | 论文链接 |
+| PDF | PDF 链接 |
+| Citation Count | 引用次数 |
+| Type | 作品类型 |
+| Language | 语言 |
+| Keywords | 关键词 |
+| Fields of Study | 学科领域 |
+| Primary Category | 主分类（arXiv） |
+| Abstract | 摘要 |
 
 ### JSON 输出
 
-生成的 JSON 文件包含两部分：
+生成的 JSON 文件包含 `metadata` 和 `papers` 两部分：
 
 ```json
 {
   "metadata": {
     "query": "machine learning",
     "keywords": ["machine learning"],
+    "queryExpansion": "none",
+    "searchScope": "default-engine-search",
     "totalRetrieved": 50,
     "afterDedup": 45,
     "afterFilter": 45,
@@ -417,23 +419,35 @@ Markdown 文件包含：
       "entry_type": "article",
       "title": "论文标题",
       "author": "作者1 and 作者2",
+      "authors": ["作者1", "作者2"],
       "year": 2024,
       "journal": "期刊名称",
+      "venue": "会议名称",
       "booktitle": null,
-      "volume": null,
-      "number": null,
-      "pages": null,
-      "publisher": null,
-      "address": null,
-      "edition": null,
-      "month": null,
-      "note": null,
+      "volume": "12",
+      "number": "3",
+      "issue": "3",
+      "pages": "101-120",
+      "first_page": "101",
+      "last_page": "120",
+      "publisher": "出版商",
       "doi": "10.xxxx/xxxxx",
       "url": "https://...",
+      "pdf_url": "https://...pdf",
       "abstract": "摘要内容",
-      "keywords": null,
-      "arxiv_id": null,
-      "openalex_id": "https://openalex.org/...",
+      "keywords": ["keyword1", "keyword2"],
+      "topics": ["topic1"],
+      "fields_of_study": ["Computer Science"],
+      "isbn": null,
+      "issn": ["1234-5678"],
+      "arxiv_id": "2401.12345",
+      "openalex_id": "https://openalex.org/W1234",
+      "semantic_scholar_id": "abc123",
+      "crossref_id": "10.xxxx/xxxxx",
+      "core_id": 12345,
+      "primary_category": "cs.AI",
+      "language": "en",
+      "work_type": "Article",
       "source": "openalex",
       "citation_count": 100,
       "relevance_score": 3,
@@ -443,31 +457,47 @@ Markdown 文件包含：
 }
 ```
 
-### BibTeX 字段说明
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `citation_key` | string | 引用键，格式：`作者年份_序号` |
-| `entry_type` | string | 条目类型：`article`（期刊论文）或 `misc`（预印本等） |
-| `title` | string | 论文标题 |
-| `author` | string | 作者列表，用 `and` 分隔 |
-| `year` | number | 出版年份 |
-| `journal` | string | 期刊/会议名称 |
-| `doi` | string | DOI 标识符 |
-| `url` | string | 论文链接 |
-| `abstract` | string | 论文摘要 |
-| `citation_count` | number | 引用次数 |
-| `source` | string | 数据来源 |
-
-> 缺省字段统一返回 `null`
-
 ### BibTeX 输出
 
-`--format bib` 会生成标准 `.bib` 文件，每篇文献对应一个 BibTeX 条目。当前默认规则：
+`--format bib` 会生成标准 `.bib` 文件，每篇文献对应一个 BibTeX 条目。
 
-- 优先输出 `@article`
-- `arXiv` 论文输出为 `@misc`
-- 若缺少 `journal` 但存在 `venue`，会补到 `booktitle`
+条目类型推断规则：
+
+- 有 `journal` 字段 → `@article`
+- 有 `venue` 但无 `journal` → `@inproceedings`（venue 写入 `booktitle`）
+- arXiv 论文 → `@misc`（附带 `eprint` 和 `archiveprefix` 字段）
+- 其他 → `@misc`
+
+BibTeX 条目包含的字段：
+
+| 字段 | 说明 |
+|------|------|
+| `title` | 论文标题 |
+| `author` | 作者列表，用 `and` 分隔 |
+| `year` | 出版年份 |
+| `journal` | 期刊名称 |
+| `booktitle` | 会议名称（仅会议论文） |
+| `volume` | 卷号 |
+| `number` | 期号 |
+| `pages` | 页码范围 |
+| `publisher` | 出版商 |
+| `doi` | DOI 标识符 |
+| `url` | 论文链接 |
+| `abstract` | 摘要 |
+| `keywords` | 关键词 |
+| `language` | 语言 |
+| `note` | 备注 |
+| `source` | 数据来源 |
+| `citationcount` | 引用次数 |
+| `pdfurl` | PDF 链接（如有） |
+| `eprint` + `archiveprefix` | arXiv ID（仅 arXiv 论文） |
+| `primaryclass` | 主分类（仅 arXiv 论文） |
+| `openalexid` | OpenAlex ID（如有） |
+| `semanticscholarid` | Semantic Scholar ID（如有） |
+| `crossrefid` | CrossRef ID（如有） |
+| `coreid` | CORE ID（如有） |
+| `issn` | ISSN（如有） |
+| `isbn` | ISBN（如有） |
 
 示例：
 
@@ -481,23 +511,16 @@ Markdown 文件包含：
   number = {3},
   pages = {101-120},
   doi = {10.1000/example},
-  url = {https://doi.org/10.1000/example}
+  url = {https://doi.org/10.1000/example},
+  abstract = {Paper abstract...},
+  keywords = {machine learning, deep learning},
+  language = {en},
+  source = {openalex},
+  citationcount = {42}
 }
 ```
 
 ## 搜索机制说明
-
-### 搜索范围
-
-各学术 API 的搜索会匹配多个字段，而非仅限于标题：
-
-- **标题 (title)**
-- **摘要 (abstract)**
-- **作者 (authors)**
-- **关键词 (keywords)**
-- **其他元数据**
-
-因此，即使论文标题不包含搜索词，如果其摘要或其他字段包含该词，也会被检索到。
 
 ### 多关键词处理
 
@@ -515,6 +538,13 @@ Markdown 文件包含：
 
 1. **DOI 匹配**：相同 DOI 的论文视为重复
 2. **标题相似度**：使用 Levenshtein 距离计算标题相似度，超过 85% 视为重复
+
+### 相关性排序
+
+检索结果按以下规则排序：
+
+1. **相关性评分**：标题中出现关键词 +3 分，摘要中出现 +1 分，总分越高排越前
+2. **引用数**：相关性评分相同时，引用数高的排前面
 
 ## 网络问题
 
@@ -539,36 +569,58 @@ Markdown 文件包含：
 - 网络连接问题（某些 API 在特定地区需要代理）
 - 查询词过于特殊
 - 年份范围过窄
-
-### Q: 如何只使用特定数据源？
-
-目前暂不支持禁用特定数据源，可通过修改源码实现。
+- 触发了速率限制（配置 API Key 可提高限额）
 
 ### Q: 如何导入到文献管理软件？
 
 直接使用 `--format bib` 生成 `.bib` 文件，即可导入 Zotero、EndNote、Mendeley 等软件。
+
+### Q: 如何排查问题？
+
+运行诊断工具：
+
+```bash
+npm run diagnose
+```
+
+诊断工具会检查 API Key 配置状态、各引擎连通性、字段返回情况、搜索范围功能等。
+
+## 测试与诊断
+
+```bash
+# 基础帮助输出检查
+npm test
+
+# 完整验收测试（覆盖所有配置项的联网测试）
+npm run test:acceptance
+
+# 网络/API 诊断
+npm run diagnose
+```
 
 ## 项目结构
 
 ```
 lit-search/
 ├── bin/
-│   ├── lit-search.js     # CLI 入口
-│   └── lit-search-mcp.js # MCP 服务入口
+│   ├── lit-search.js       # CLI 入口
+│   └── lit-search-mcp.js   # MCP 服务入口
 ├── lib/
-│   ├── app-config.js     # 本机配置与环境变量读取
-│   ├── logger.js         # 日志接口
-│   ├── output.js         # md/json/bib 输出渲染
-│   ├── search.js         # 核心搜索逻辑
+│   ├── app-config.js       # 本机配置与环境变量读取
+│   ├── key-config.js       # API Key 文件加载与别名映射
+│   ├── logger.js           # 日志接口
+│   ├── output.js           # md/json/bib 输出渲染
+│   ├── search.js           # 核心搜索逻辑（多源检索、去重、排序）
 │   └── apis/
-│       ├── index.js      # API 导出
-│       ├── openalex.js   # OpenAlex API
-│       ├── arxiv.js      # arXiv API
-│       ├── crossref.js   # CrossRef API
-│       ├── core.js       # CORE API
-│       └── semantic-scholar.js  # Semantic Scholar API
-├── diagnose.js           # 网络/API 诊断脚本
-├── test.js               # 联网 smoke test
+│       ├── index.js        # API 导出
+│       ├── openalex.js     # OpenAlex API
+│       ├── arxiv.js        # arXiv API
+│       ├── crossref.js     # CrossRef API
+│       ├── core.js         # CORE API
+│       ├── semantic-scholar.js  # Semantic Scholar API
+│       └── request-utils.js     # 请求超时与中断工具
+├── diagnose.js             # 网络/API 诊断脚本
+├── test.js                 # 联网验收测试
 ├── package.json
 └── README.md
 ```
