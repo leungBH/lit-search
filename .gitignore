@@ -18,6 +18,7 @@ build/
 
 # IDE
 .idea/
+.trae/
 .vscode/
 *.swp
 *.swo
@@ -54,3 +55,5 @@ backup/
 *_202*.md
 *_202*.json
 *_202*.bib
+*_20??????_??????/
+outputs/

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { searchPapers } from '../lib/search.js';
-import { renderOutput } from '../lib/output.js';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import { runLitSearchWorkflow } from '../lib/workflow.js';
 import { createAppConfig, getResolvedApiKeys } from '../lib/app-config.js';
 import { silentLogger } from '../lib/logger.js';
 
@@ -12,160 +14,99 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageRoot = join(__dirname, '..');
 const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'));
-const protocolVersion = '2024-11-05';
 const config = createAppConfig();
+const debugLogFile = process.env.LIT_SEARCH_MCP_DEBUG_FILE ||
+  (process.env.LIT_SEARCH_MCP_DEBUG === '1' ? join(packageRoot, 'temp', 'mcp-debug.log') : null);
 
-let inputBuffer = Buffer.alloc(0);
+logDebug(`startup sdk node=${process.version} cwd=${process.cwd()} argv=${JSON.stringify(process.argv)}`);
 
-process.stdin.on('data', chunk => {
-  inputBuffer = Buffer.concat([inputBuffer, chunk]);
-  processBuffer();
+const server = new McpServer({
+  name: 'lit-search-mcp',
+  version: packageJson.version
 });
 
-process.stdin.on('end', () => process.exit(0));
-
-function processBuffer() {
-  while (true) {
-    const headerEnd = inputBuffer.indexOf('\r\n\r\n');
-    if (headerEnd === -1) return;
-
-    const headerText = inputBuffer.slice(0, headerEnd).toString('utf8');
-    const contentLength = parseContentLength(headerText);
-    if (contentLength === null) {
-      inputBuffer = Buffer.alloc(0);
-      return;
+server.registerTool(
+  'search_literature',
+  {
+    title: 'Search Literature',
+    description: [
+      'Search academic literature across Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE.',
+      'This tool does not only return metadata: every call creates a local result folder.',
+      'The folder always contains results.md, references.bib, and a pdfs/ subfolder for downloaded PDFs.',
+      'Read structuredContent.output for outputDir, markdownFile, bibFile, and pdfDir.',
+      'Read structuredContent.pdfSummary for PDF download success/failure diagnostics.',
+      'Agent guidance: treat each independent concept as a separate keyword.',
+      'Use comma-separated query text such as "ontology, knowledge graph, semantic web".',
+      'Do not send a long space-separated bag of concepts such as "ontology knowledge graph semantic web"; that is interpreted as one phrase and may over-filter results.',
+      'Use queryExpansion="none" for broad recall, "pairwise" only when combinations are needed, and keep limit modest because it is per keyword per source.'
+    ].join(' '),
+    inputSchema: {
+      query: z.string().min(1).describe('Search query. For multiple concepts, prefer comma-separated terms, e.g. "ontology, knowledge graph, semantic web". Avoid long space-separated bags of concepts.'),
+      limit: z.number().optional().describe('Per-keyword, per-source retrieval limit. Default: 3.'),
+      yearStart: z.number().optional().describe('Inclusive start year.'),
+      yearEnd: z.number().optional().describe('Inclusive end year.'),
+      queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none. Use pairwise/full only after splitting concepts into keywords.'),
+      searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search for recall; title-only is strict.')
     }
-
-    const messageEnd = headerEnd + 4 + contentLength;
-    if (inputBuffer.length < messageEnd) return;
-
-    const messageText = inputBuffer.slice(headerEnd + 4, messageEnd).toString('utf8');
-    inputBuffer = inputBuffer.slice(messageEnd);
-
-    try {
-      const message = JSON.parse(messageText);
-      handleMessage(message).catch(error => {
-        if (message?.id !== undefined) {
-          sendError(message.id, -32603, error.message || 'Internal error');
-        }
-      });
-    } catch (error) {
-      // Ignore malformed payloads.
-    }
-  }
-}
-
-function parseContentLength(headerText) {
-  const match = headerText.match(/Content-Length:\s*(\d+)/i);
-  return match ? Number(match[1]) : null;
-}
-
-async function handleMessage(message) {
-  const { id, method, params } = message;
-
-  if (method === 'initialize') {
-    sendResult(id, {
-      protocolVersion,
-      capabilities: {
-        tools: {
-          listChanged: false
-        }
-      },
-      serverInfo: {
-        name: 'lit-search-mcp',
-        version: packageJson.version
-      }
+  },
+  async args => {
+    logDebug(`tool search_literature args=${JSON.stringify(args)}`);
+    const agentGuidance = buildAgentGuidance(args.query);
+    const workflow = await runLitSearchWorkflow({
+      query: args.query,
+      keywords: [],
+      excludeTerms: [],
+      yearStart: normalizeOptionalNumber(args.yearStart),
+      yearEnd: normalizeOptionalNumber(args.yearEnd),
+      limit: normalizeOptionalNumber(args.limit) || 3,
+      queryExpansion: normalizeEnum(args.queryExpansion, ['none', 'pairwise', 'full'], 'none'),
+      searchScope: normalizeEnum(
+        args.searchScope,
+        ['title-only', 'title-abstract', 'default-engine-search'],
+        'default-engine-search'
+      ),
+      apiKeys: getResolvedApiKeys(config),
+      logger: silentLogger,
+      outputBaseDir: process.cwd()
     });
-    return;
-  }
 
-  if (method === 'notifications/initialized') {
-    return;
-  }
+    workflow.result.metadata.agentGuidance = agentGuidance;
+    logDebug(`tool search_literature done papers=${workflow.result.papers.length}`);
 
-  if (method === 'tools/list') {
-    sendResult(id, {
-      tools: [
+    return {
+      content: [
         {
-          name: 'search_literature',
-          description: 'Search academic literature across Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: { type: 'string', description: 'Search query or comma-separated keywords.' },
-              limit: { type: 'number', description: 'Per-keyword, per-source retrieval limit.', default: 3 },
-              yearStart: { type: 'number', description: 'Inclusive start year.' },
-              yearEnd: { type: 'number', description: 'Inclusive end year.' },
-              format: { type: 'string', enum: ['md', 'json', 'bib'], default: 'md' },
-              queryExpansion: { type: 'string', enum: ['none', 'pairwise', 'full'], default: 'none' },
-              searchScope: { type: 'string', enum: ['title-only', 'title-abstract', 'default-engine-search'], default: 'default-engine-search' }
-            },
-            required: ['query']
-          }
+          type: 'text',
+          text: buildMcpOutputSummary(workflow)
+        },
+        {
+          type: 'text',
+          text: workflow.markdown
+        },
+        {
+          type: 'text',
+          text: workflow.bibtex
         }
-      ]
-    });
-    return;
-  }
-
-  if (method === 'tools/call') {
-    const result = await callTool(params);
-    sendResult(id, result);
-    return;
-  }
-
-  if (id !== undefined) {
-    sendError(id, -32601, `Method not found: ${method}`);
-  }
-}
-
-async function callTool(params) {
-  const { name, arguments: args = {} } = params || {};
-
-  if (name !== 'search_literature') {
-    throw new Error(`Unknown tool: ${name}`);
-  }
-
-  const query = String(args.query || '').trim();
-  if (!query) {
-    throw new Error('query is required');
-  }
-
-  const apiKeys = loadApiKeys();
-  const result = await searchPapers({
-    query,
-    keywords: [],
-    excludeTerms: [],
-    yearStart: normalizeOptionalNumber(args.yearStart),
-    yearEnd: normalizeOptionalNumber(args.yearEnd),
-    limit: normalizeOptionalNumber(args.limit) || 3,
-    queryExpansion: normalizeEnum(args.queryExpansion, ['none', 'pairwise', 'full'], 'none'),
-    searchScope: normalizeEnum(
-      args.searchScope,
-      ['title-only', 'title-abstract', 'default-engine-search'],
-      'default-engine-search'
-    ),
-    apiKeys,
-    logger: silentLogger
-  });
-
-  const format = normalizeEnum(args.format, ['md', 'json', 'bib'], 'md');
-  const rendered = renderOutput(result, format);
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: rendered
+      ],
+      structuredContent: {
+        ...workflow.result,
+        output: workflow.output,
+        pdfSummary: workflow.pdfSummary
       }
-    ],
-    structuredContent: result
-  };
-}
+    };
+  }
+);
 
-function loadApiKeys() {
-  return getResolvedApiKeys(config);
-}
+const transport = new StdioServerTransport();
+transport.onerror = error => {
+  logDebug(`transport error: ${error.stack || error.message}`);
+};
+transport.onclose = () => {
+  logDebug('transport closed');
+};
+
+await server.connect(transport);
+logDebug('server connected');
 
 function normalizeOptionalNumber(value) {
   if (value === undefined || value === null || value === '') return null;
@@ -178,24 +119,42 @@ function normalizeEnum(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback;
 }
 
-function sendResult(id, result) {
-  sendMessage({
-    jsonrpc: '2.0',
-    id,
-    result
-  });
+function buildAgentGuidance(query) {
+  const originalQuery = String(query || '').trim();
+  const hasComma = originalQuery.includes(',');
+  const wordCount = originalQuery.split(/\s+/).filter(Boolean).length;
+  const looksLikeLongConceptBag = !hasComma && wordCount >= 4;
+
+  return {
+    originalQuery,
+    warning: looksLikeLongConceptBag
+      ? 'This query looks like several concepts written as one phrase. For multiple keywords, call this MCP tool with comma-separated query text, e.g. query="ontology, knowledge graph, semantic web".'
+      : null
+  };
 }
 
-function sendError(id, code, message) {
-  sendMessage({
-    jsonrpc: '2.0',
-    id,
-    error: { code, message }
-  });
+function buildMcpOutputSummary(workflow) {
+  return [
+    'lit-search completed.',
+    '',
+    'Local files created:',
+    `- Markdown: ${workflow.output.markdownFile}`,
+    `- BibTeX: ${workflow.output.bibFile}`,
+    `- PDFs: ${workflow.output.pdfDir}`,
+    '',
+    `PDF downloads: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
+    '',
+    'Use results.md for readable paper summaries, references.bib for Zotero/EndNote/Mendeley citation import, and the pdfs/ folder for downloaded full texts.',
+    'If a PDF failed, inspect structuredContent.pdfSummary.results or the PDF field in results.md for the failure reason and suggested next action.'
+  ].join('\n');
 }
 
-function sendMessage(message) {
-  const payload = Buffer.from(JSON.stringify(message), 'utf8');
-  process.stdout.write(`Content-Length: ${payload.length}\r\n\r\n`);
-  process.stdout.write(payload);
+function logDebug(message) {
+  if (!debugLogFile) return;
+  try {
+    mkdirSync(dirname(debugLogFile), { recursive: true });
+    appendFileSync(debugLogFile, `[${new Date().toISOString()}] [lit-search-mcp] ${message}\n`, 'utf8');
+  } catch {
+    // Debug logging must never break the MCP protocol.
+  }
 }
