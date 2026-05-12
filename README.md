@@ -19,6 +19,7 @@
 - **BibTeX 导出**：可导入 Zotero、EndNote、Mendeley 或 LaTeX 工作流。
 - **PDF 下载诊断**：记录下载成功、无 PDF、登录墙、人机核验、非 PDF 页面、限流等情况。
 - **MCP 服务**：可接入 Trae 等支持 MCP 的 AI 编程工具。
+- **Skills 支持**：内置面向智能体的 `lit-search` Skill，帮助 Codex 等客户端正确拆分关键词、调用 MCP/CLI 并读取输出文件。
 - **跨平台**：支持 Windows、macOS、Linux。
 
 ## 快速开始
@@ -86,6 +87,7 @@ lit-search "machine learning"
 lit-search "AI, coding, agent" -l 5 -s 2023
 lit-search "AI, coding, agent" --expand pairwise
 lit-search "computer vision" --search-scope title-only
+lit-search "machine learning" --output-dir ./results
 ```
 
 完整参数：
@@ -100,6 +102,7 @@ Options:
   -u, --until <year>       结束年份，包含该年
   --expand <mode>          查询展开策略：none|pairwise|full，默认 none
   --search-scope <mode>    检索范围：title-only|title-abstract|default-engine-search
+  --output-dir <dir>       生成结果文件夹的父目录
   -h, --help               显示帮助
   -v, --version            显示版本
 ```
@@ -140,10 +143,10 @@ lit-search "ontology, knowledge graph, semantic web" -l 5
 
 ## 输出结果
 
-每次运行都会创建一个结果文件夹，例如：
+每次运行都会创建一个结果文件夹。默认保存在当前目录，也可以通过 `--output-dir <dir>` 指定父目录，例如：
 
 ```text
-machinelearning_20260511_153020/
+results/machinelearning_20260511_153020/
 ```
 
 目录结构：
@@ -290,8 +293,9 @@ search_literature
 | `yearEnd` | number | 结束年份 |
 | `queryExpansion` | string | `none` / `pairwise` / `full` |
 | `searchScope` | string | `title-only` / `title-abstract` / `default-engine-search` |
+| `outputDir` | string | 生成结果文件夹的父目录；仍会自动创建时间戳结果子文件夹 |
 
-MCP 和 CLI 使用同一个底层 workflow。调用后会创建结果文件夹、下载 PDF、写入 `results.md` 和 `references.bib`，并返回 Markdown、BibTeX、结构化文献数据、输出路径和 PDF 下载诊断。
+MCP 和 CLI 使用同一个底层 workflow。调用后会创建结果文件夹、下载 PDF、写入 `results.md` 和 `references.bib`，并返回 Markdown、BibTeX、结构化文献数据、输出路径和 PDF 下载诊断。一次 workflow 会并发检索已启用的数据源，但同一数据源内的多个关键词仍会串行请求，以降低触发上游 API 限制的风险。
 
 Agent 调用后应优先查看：
 
@@ -302,6 +306,49 @@ Agent 调用后应优先查看：
 - `structuredContent.pdfSummary`
 
 工具返回的第一段文本也会直接列出 Markdown、BibTeX 和 PDF 目录路径。
+
+## 通过 Skills 使用
+
+仓库内置了一个面向智能体的 Skill：
+
+```text
+skills/lit-search/SKILL.md
+```
+
+这个 Skill 不负责执行检索，而是告诉 Codex 等支持 Skills 的客户端：什么时候应该使用 `lit-search`、多个关键词如何用英文逗号分隔、优先调用哪个 MCP 工具、MCP 不可用时如何回退 CLI，以及检索完成后应该读取哪些输出文件。
+
+### 安装到 Codex 客户端
+
+本地源码仓库中，可以用 PowerShell 复制：
+
+```powershell
+Copy-Item -Recurse -Force .\skills\lit-search "$env:USERPROFILE\.codex\skills\lit-search"
+```
+
+如果是从 npm 全局安装后想复制 Skill，可以先查看全局包路径：
+
+```powershell
+npm root -g
+```
+
+然后把其中的 `lit-search\skills\lit-search` 复制到：
+
+```text
+C:\Users\<你的用户名>\.codex\skills\lit-search
+```
+
+安装后重启 Codex 客户端。之后可以这样提问：
+
+```text
+帮我检索 ontology, knowledge graph, semantic web 相关论文，2020 年以后，每个关键词每个数据源 5 篇，保存 BibTeX 和 PDF。
+```
+
+Skill 会引导智能体优先调用 MCP 的 `search_literature`，并在结果生成后查看：
+
+- `results.md`
+- `references.bib`
+- `pdfs/`
+- PDF 下载备注或 `pdfSummary`
 
 ### Agent 调用建议
 
@@ -323,7 +370,8 @@ Agent 调用后应优先查看：
   "query": "ontology, knowledge graph, semantic web",
   "limit": 5,
   "queryExpansion": "none",
-  "searchScope": "default-engine-search"
+  "searchScope": "default-engine-search",
+  "outputDir": "D:/lit-search-results"
 }
 ```
 
@@ -333,6 +381,8 @@ Agent 调用后应优先查看：
 - `limit` 通常设置为 `3` 到 `5` 就够做初筛。
 - 默认 `queryExpansion: "none"` 更稳。
 - `title-only` 很严格，容易漏结果；一般先用 `default-engine-search`。
+- lit-search 单次调用内部已经会并发检索多个文献源；同一个研究请求不要拆成多个子任务并发调用 MCP/CLI。
+- 多个独立主题建议顺序执行；如果确实要并发，应先确认用户接受上游 API 限制风险。
 
 ### Trae 配置示例
 

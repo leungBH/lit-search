@@ -35,9 +35,12 @@ server.registerTool(
       'The folder always contains results.md, references.bib, and a pdfs/ subfolder for downloaded PDFs.',
       'Read structuredContent.output for outputDir, markdownFile, bibFile, and pdfDir.',
       'Read structuredContent.pdfSummary for PDF download success/failure diagnostics.',
+      'lit-search already searches enabled literature sources inside one tool call; do not split one research request into parallel lit-search subtasks.',
       'Agent guidance: treat each independent concept as a separate keyword.',
       'Use comma-separated query text such as "ontology, knowledge graph, semantic web".',
       'Do not send a long space-separated bag of concepts such as "ontology knowledge graph semantic web"; that is interpreted as one phrase and may over-filter results.',
+      'For several independent research topics, prefer sequential lit-search calls with modest limits instead of parallel calls to avoid upstream API limits.',
+      'Use outputDir to choose the parent directory where the generated result folder will be created.',
       'Use queryExpansion="none" for broad recall, "pairwise" only when combinations are needed, and keep limit modest because it is per keyword per source.'
     ].join(' '),
     inputSchema: {
@@ -46,7 +49,8 @@ server.registerTool(
       yearStart: z.number().optional().describe('Inclusive start year.'),
       yearEnd: z.number().optional().describe('Inclusive end year.'),
       queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none. Use pairwise/full only after splitting concepts into keywords.'),
-      searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search for recall; title-only is strict.')
+      searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search for recall; title-only is strict.'),
+      outputDir: z.string().optional().describe('Parent directory for generated result folders. The tool still creates a timestamped result folder containing results.md, references.bib, and pdfs/.')
     }
   },
   async args => {
@@ -67,7 +71,7 @@ server.registerTool(
       ),
       apiKeys: getResolvedApiKeys(config),
       logger: silentLogger,
-      outputBaseDir: process.cwd()
+      outputBaseDir: args.outputDir || process.cwd()
     });
 
     workflow.result.metadata.agentGuidance = agentGuidance;
@@ -145,7 +149,8 @@ function buildMcpOutputSummary(workflow) {
     `PDF downloads: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
     '',
     'Use results.md for readable paper summaries, references.bib for Zotero/EndNote/Mendeley citation import, and the pdfs/ folder for downloaded full texts.',
-    'If a PDF failed, inspect structuredContent.pdfSummary.results or the PDF field in results.md for the failure reason and suggested next action.'
+    'If a PDF failed, inspect structuredContent.pdfSummary.results or the PDF field in results.md for the failure reason and suggested next action.',
+    'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.'
   ].join('\n');
 }
 

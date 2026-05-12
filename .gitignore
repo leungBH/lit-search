@@ -20,6 +20,8 @@ build/
 .idea/
 .trae/
 .vscode/
+.codex/
+.claude/
 *.swp
 *.swo
 *~
@@ -57,3 +59,6 @@ backup/
 *_202*.bib
 *_20??????_??????/
 outputs/
+
+# openspec
+openspec/

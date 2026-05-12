@@ -47,9 +47,12 @@ async function main() {
   results.push(await runTest('CLI help', testCliHelp));
   results.push(await runTest('renderers', testRenderers));
   results.push(await runTest('query expansion', testQueryExpansion));
+  results.push(await runTest('parallel source orchestration', testParallelSourceOrchestration));
   results.push(await runTest('MCP handshake', () => testMcpHandshake(keyEnv)));
 
-  if (!hasAnyKeys(keyEnv)) {
+  if (process.env.LIT_SEARCH_SKIP_NETWORK_TESTS === '1') {
+    console.log(chalk.yellow('\nLIT_SEARCH_SKIP_NETWORK_TESTS=1. Skipping network tests.'));
+  } else if (!hasAnyKeys(keyEnv)) {
     console.log(chalk.yellow('\nNo API keys found. Skipping network tests.'));
   } else {
     for (const test of networkTests) {
@@ -87,6 +90,7 @@ function testCliHelp() {
   assert.match(output, /lit-search init/);
   assert.match(output, /results\.md/);
   assert.match(output, /references\.bib/);
+  assert.match(output, /--output-dir/);
   assert.doesNotMatch(output, /--format/);
 }
 
@@ -177,6 +181,18 @@ async function testMcpHandshake(env) {
   assert.equal(responses[0].result.serverInfo.name, 'lit-search-mcp');
   assert.equal(responses[1].result.tools[0].name, 'search_literature');
   assert.equal(responses[1].result.tools[0].inputSchema.properties.format, undefined);
+  assert.ok(responses[1].result.tools[0].inputSchema.properties.outputDir);
+}
+
+function testParallelSourceOrchestration() {
+  const source = readFileSync(resolve(process.cwd(), 'lib/search.js'), 'utf-8');
+  assert.match(source, /Promise\.all\(/);
+  assert.match(source, /engineList\.map/);
+  assert.match(source, /async function searchEngineQuery/);
+  assert.match(source, /startProgressList/);
+  assert.match(source, /正在检索的关键词/);
+  assert.match(source, /SAME_SOURCE_QUERY_DELAY_MS = 1100/);
+  assert.match(source, /setTimeout\(r, SAME_SOURCE_QUERY_DELAY_MS\)/);
 }
 
 async function runNetworkTest(test, env) {

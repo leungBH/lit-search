@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -29,7 +29,8 @@ function parseArgs(args) {
     yearStart: null,
     yearEnd: null,
     queryExpansion: 'none',
-    searchScope: 'default-engine-search'
+    searchScope: 'default-engine-search',
+    outputBaseDir: process.cwd()
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -45,6 +46,8 @@ function parseArgs(args) {
       options.queryExpansion = normalizeQueryExpansion(args[++i]);
     } else if (arg === '--search-scope') {
       options.searchScope = normalizeSearchScope(args[++i]);
+    } else if (arg === '--output-dir') {
+      options.outputBaseDir = resolve(args[++i] || process.cwd());
     } else if (arg === '--format') {
       console.error(chalk.red('The --format option has been removed. lit-search now always writes md and bib outputs.'));
       process.exit(1);
@@ -79,6 +82,7 @@ Options:
   -u, --until <year>       Inclusive end year
   --expand <mode>          Query expansion: none|pairwise|full (default: none)
   --search-scope <mode>    title-only|title-abstract|default-engine-search
+  --output-dir <dir>       Parent directory for generated result folders
   -h, --help               Show help
   -v, --version            Show version
 
@@ -91,6 +95,7 @@ Output:
 Examples:
   lit-search init
   lit-search "machine learning" -l 5 -s 2022
+  lit-search "machine learning" -l 5 --output-dir ./results
   lit-search "AI, coding, agent" --expand pairwise --search-scope title-abstract
 `);
 }
@@ -137,20 +142,21 @@ async function main() {
     process.exit(1);
   }
 
-  const outputDir = generateOutputFolderName(options.query);
+  const outputFolderName = generateOutputFolderName(options.query);
+  const plannedOutputDir = join(options.outputBaseDir, outputFolderName);
 
   console.log(chalk.bold.blue('\nlit-search\n'));
   console.log(`Query: ${options.query}`);
   console.log(`Limit: ${options.limit} per keyword per source`);
   console.log(`Expansion: ${options.queryExpansion}`);
   console.log(`Search scope: ${options.searchScope}`);
-  console.log(`Output folder: ${outputDir}`);
+  console.log(`Output folder: ${plannedOutputDir}`);
   if (options.yearStart || options.yearEnd) {
     console.log(`Year range: ${options.yearStart || '...'} - ${options.yearEnd || '...'}`);
   }
   console.log();
 
-  const spinner = ora('Searching...').start();
+  let spinner = null;
 
   try {
     const workflow = await runLitSearchWorkflow({
@@ -164,18 +170,24 @@ async function main() {
       searchScope: options.searchScope,
       engines: config.get('engines') || {},
       apiKeys: getResolvedApiKeys(config),
-      outputDir,
+      outputBaseDir: options.outputBaseDir,
       hooks: {
         onBeforePdfDownload: () => {
-          spinner.text = 'Downloading PDFs...';
+          if (process.stdout.isTTY) {
+            spinner = ora('Downloading PDFs...').start();
+          }
         }
       }
     });
 
     const { result, output, pdfSummary } = workflow;
 
-    spinner.succeed(`Done. ${result.papers.length} papers found.`);
-    console.log(chalk.green(`\nResult folder: ${outputDir}`));
+    if (spinner) {
+      spinner.succeed(`Done. ${result.papers.length} papers found.`);
+    } else {
+      console.log(chalk.green(`Done. ${result.papers.length} papers found.`));
+    }
+    console.log(chalk.green(`\nResult folder: ${output.outputDir}`));
     console.log(`  Markdown: ${output.markdownFile}`);
     console.log(`  BibTeX:   ${output.bibFile}`);
     console.log(`  PDFs:     ${pdfSummary.pdfDir} (${pdfSummary.downloaded}/${pdfSummary.total} downloaded)`);
@@ -197,7 +209,11 @@ async function main() {
       }
     }
   } catch (error) {
-    spinner.fail('Search failed.');
+    if (spinner) {
+      spinner.fail('Search failed.');
+    } else {
+      console.error(chalk.red('Search failed.'));
+    }
     console.error(chalk.red(error.message));
     process.exit(1);
   }
