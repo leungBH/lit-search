@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { runLitSearchWorkflow } from '../lib/workflow.js';
+import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
+import { readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
+import { filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
 import { createAppConfig, getResolvedApiKeys } from '../lib/app-config.js';
 import { silentLogger } from '../lib/logger.js';
 
@@ -99,6 +101,216 @@ server.registerTool(
         ...workflow.result,
         output: workflow.output,
         pdfSummary: workflow.pdfSummary
+      }
+    };
+  }
+);
+
+server.registerTool(
+  'download_pdfs',
+  {
+    title: 'Download PDFs',
+    description: [
+      'Download PDFs for an existing lit-search literature pool.',
+      'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
+      'This is the MCP equivalent of "lit-search pdf". It updates literature_pool.md, references.bib, pdf_status.md, and literature_pool.json in place.',
+      'Use retry="failed" to only retry papers with PDF URLs that are not already downloaded.',
+      'Use retry="missing" only to refresh status for papers without PDF URLs; these cannot be downloaded automatically.',
+      'Do not run multiple PDF download calls in parallel for the same pool.'
+    ].join(' '),
+    inputSchema: {
+      poolPath: z.string().min(1).describe('Path to a lit-search result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.'),
+      retry: z.enum(['all', 'failed', 'missing']).optional().describe('Retry mode. Default all; failed skips already-downloaded PDFs.')
+    }
+  },
+  async args => {
+    logDebug(`tool download_pdfs args=${JSON.stringify(args)}`);
+    const poolFile = resolvePoolPath(args.poolPath);
+    const pool = readLiteraturePool(poolFile);
+    const outputDir = dirname(poolFile);
+    const retryMode = normalizeEnum(args.retry, ['all', 'failed', 'missing'], 'all');
+    const targetPapers = filterPapersForPdfRetry(pool.papers || [], retryMode);
+    const workflow = await downloadPoolPdfs(pool, outputDir, {
+      logger: silentLogger,
+      papers: targetPapers
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            'lit-search PDF download completed.',
+            '',
+            `Result folder: ${workflow.output.outputDir}`,
+            `PDF status: ${workflow.output.pdfStatusFile}`,
+            `PDFs: ${workflow.output.pdfDir}`,
+            '',
+            `PDF status: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
+            'Inspect structuredContent.pdfSummary.results for failure codes, reasons, and suggested next actions.'
+          ].join('\n')
+        }
+      ],
+      structuredContent: {
+        output: workflow.output,
+        pdfSummary: workflow.pdfSummary
+      }
+    };
+  }
+);
+
+server.registerTool(
+  'pool_status',
+  {
+    title: 'Literature Pool Status',
+    description: [
+      'Summarize an existing lit-search literature pool.',
+      'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
+      'This is the MCP equivalent of "lit-search status".'
+    ].join(' '),
+    inputSchema: {
+      poolPath: z.string().min(1).describe('Path to a lit-search result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.')
+    }
+  },
+  async args => {
+    logDebug(`tool pool_status args=${JSON.stringify(args)}`);
+    const poolFile = resolvePoolPath(args.poolPath);
+    const pool = readLiteraturePool(poolFile);
+    const summary = summarizePool(pool);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            'lit-search pool status.',
+            '',
+            `Pool: ${poolFile}`,
+            `Papers: ${summary.papers}`,
+            `PDF downloaded: ${summary.pdf.downloaded}`,
+            `PDF not attempted: ${summary.pdf.notAttempted}`,
+            `PDF missing URL: ${summary.pdf.missingUrl}`,
+            `PDF failed: ${summary.pdf.failed}`,
+            `PDF skipped: ${summary.pdf.skipped}`
+          ].join('\n')
+        }
+      ],
+      structuredContent: {
+        poolFile,
+        summary
+      }
+    };
+  }
+);
+
+server.registerTool(
+  'merge_pools',
+  {
+    title: 'Merge Literature Pools',
+    description: [
+      'Merge multiple lit-search literature pools into one deduplicated pool.',
+      'Inputs can be result folders, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
+      'This is the MCP equivalent of "lit-search merge".',
+      'Merging writes literature_pool.md, literature_pool.json, references.bib, pdf_status.md, and pdfs/ into outputDir.'
+    ].join(' '),
+    inputSchema: {
+      inputs: z.array(z.string().min(1)).min(1).describe('Pool paths to merge.'),
+      outputDir: z.string().optional().describe('Directory for the merged pool. Default: ./merged_literature.')
+    }
+  },
+  async args => {
+    logDebug(`tool merge_pools args=${JSON.stringify(args)}`);
+    const outputDir = resolve(args.outputDir || 'merged_literature');
+    const result = mergePools(args.inputs, outputDir);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            `Merged ${args.inputs.length} pool(s).`,
+            '',
+            `Result folder: ${outputDir}`,
+            `Papers: ${result.pool.papers.length}`,
+            `Literature pool: ${result.files.literaturePoolFile}`,
+            `BibTeX: ${result.files.bibFile}`,
+            `PDF status: ${result.files.pdfStatusFile}`
+          ].join('\n')
+        }
+      ],
+      structuredContent: {
+        ...result.pool,
+        output: {
+          outputDir,
+          literaturePoolFile: result.files.literaturePoolFile,
+          markdownFile: result.files.markdownFile,
+          bibFile: result.files.bibFile,
+          pdfStatusFile: result.files.pdfStatusFile,
+          poolJsonFile: result.files.poolJsonFile,
+          metaFile: result.files.metaFile,
+          pdfDir: join(outputDir, 'pdfs')
+        }
+      }
+    };
+  }
+);
+
+server.registerTool(
+  'resolve_citations',
+  {
+    title: 'Resolve Citations',
+    description: [
+      'Resolve concrete citation strings from a text file into a lit-search literature pool.',
+      'Use this when the user has references copied from a paper rather than broad keywords.',
+      'This is the MCP equivalent of "lit-search resolve".',
+      'The result is search-only by default; call download_pdfs afterwards if full-text PDF download is requested.'
+    ].join(' '),
+    inputSchema: {
+      citationsFile: z.string().min(1).describe('Path to a UTF-8 text file containing numbered or bracketed citation lines.'),
+      outputDir: z.string().optional().describe('Directory for the resolved literature pool. Default: ./resolved_literature.'),
+      limit: z.number().optional().describe('Per-citation lookup limit. Default: 3.')
+    }
+  },
+  async args => {
+    logDebug(`tool resolve_citations args=${JSON.stringify(args)}`);
+    const outputDir = resolve(args.outputDir || 'resolved_literature');
+    const result = await resolveCitationsFile(args.citationsFile, {
+      limit: normalizeOptionalNumber(args.limit) || 3,
+      outputDir,
+      apiKeys: getResolvedApiKeys(config),
+      engines: config.get('engines') || {},
+      logger: silentLogger
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            'lit-search citation resolve completed.',
+            '',
+            `Result folder: ${outputDir}`,
+            `Resolved: ${result.pool.papers.length}`,
+            `Unresolved: ${result.unresolved.length}`,
+            `Literature pool: ${result.files.literaturePoolFile}`,
+            `BibTeX: ${result.files.bibFile}`,
+            `PDF status: ${result.files.pdfStatusFile}`
+          ].join('\n')
+        }
+      ],
+      structuredContent: {
+        ...result.pool,
+        output: {
+          outputDir,
+          literaturePoolFile: result.files.literaturePoolFile,
+          markdownFile: result.files.markdownFile,
+          bibFile: result.files.bibFile,
+          pdfStatusFile: result.files.pdfStatusFile,
+          poolJsonFile: result.files.poolJsonFile,
+          metaFile: result.files.metaFile,
+          pdfDir: join(outputDir, 'pdfs')
+        },
+        unresolved: result.unresolved
       }
     };
   }

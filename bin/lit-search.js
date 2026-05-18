@@ -8,7 +8,7 @@ import ora from 'ora';
 import inquirer from 'inquirer';
 import { generateOutputFolderName, readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
 import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
-import { mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
+import { filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
 import {
   createAppConfig,
   getResolvedApiKeys,
@@ -78,8 +78,8 @@ lit-search v${packageJson.version}
 Usage:
   lit-search [query] [options]
   lit-search search [query] [options]
-  lit-search pdf <pool-folder|literature_pool.json>
-  lit-search status <pool-folder|literature_pool.json>
+  lit-search pdf <pool-folder|literature_pool.json|pdf_status.md> [--retry all|failed|missing]
+  lit-search status <pool-folder|literature_pool.json|pdf_status.md>
   lit-search merge <pool...> -o <output-dir>
   lit-search resolve <citations.txt> [options]
   lit-search init
@@ -96,6 +96,7 @@ Options:
   --output-dir <dir>       Parent directory for generated result folders
   --pdf                    Download PDFs after writing literature pool files
   --no-pdf                 Do not download PDFs (default)
+  --retry <mode>           PDF retry mode for "pdf": all|failed|missing (default: all)
   -h, --help               Show help
   -v, --version            Show version
 
@@ -112,6 +113,7 @@ Examples:
   lit-search "machine learning" -l 5 -s 2022
   lit-search search "machine learning" --pdf
   lit-search pdf .\\lit_search_20260518_153020
+  lit-search pdf .\\lit_search_20260518_153020\\pdf_status.md --retry failed
   lit-search status .\\lit_search_20260518_153020
   lit-search merge .\\batch1 .\\batch2 -o .\\merged
   lit-search resolve .\\citations.txt --output-dir .\\resolved
@@ -274,17 +276,6 @@ async function runPdfCommand(args) {
   if (spinner) spinner.succeed('PDF download complete.');
   console.log(chalk.green(`PDF status: ${workflow.output.pdfStatusFile}`));
   console.log(`PDFs: ${workflow.output.pdfDir} (${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded)`);
-}
-
-function filterPapersForPdfRetry(papers, retryMode) {
-  if (retryMode === 'all') return papers;
-  if (retryMode === 'failed') {
-    return papers.filter(paper => paper.pdf_url && paper.pdf_download?.status !== 'success');
-  }
-  if (retryMode === 'missing') {
-    return papers.filter(paper => !paper.pdf_url);
-  }
-  return papers;
 }
 
 async function runStatusCommand(args) {

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import chalk from 'chalk';
 import { renderOutput } from './lib/output.js';
+import { writeResultFiles } from './lib/output-files.js';
 import { generateQueries } from './lib/search.js';
 
 const cliEntry = resolve(process.cwd(), 'bin/lit-search.js');
@@ -49,6 +50,7 @@ async function main() {
   results.push(await runTest('query expansion', testQueryExpansion));
   results.push(await runTest('parallel source orchestration', testParallelSourceOrchestration));
   results.push(await runTest('MCP handshake', () => testMcpHandshake(keyEnv)));
+  results.push(await runTest('MCP pool workflow tools', () => testMcpPoolWorkflowTools(keyEnv)));
 
   if (process.env.LIT_SEARCH_SKIP_NETWORK_TESTS === '1') {
     console.log(chalk.yellow('\nLIT_SEARCH_SKIP_NETWORK_TESTS=1. Skipping network tests.'));
@@ -93,6 +95,8 @@ function testCliHelp() {
   assert.match(output, /pdf_status\.md/);
   assert.match(output, /--output-dir/);
   assert.match(output, /--pdf/);
+  assert.match(output, /--retry/);
+  assert.match(output, /pdf_status\.md/);
   assert.doesNotMatch(output, /--format/);
 }
 
@@ -181,10 +185,77 @@ async function testMcpHandshake(env) {
   ], env);
 
   assert.equal(responses[0].result.serverInfo.name, 'lit-search-mcp');
-  assert.equal(responses[1].result.tools[0].name, 'search_literature');
-  assert.equal(responses[1].result.tools[0].inputSchema.properties.format, undefined);
-  assert.ok(responses[1].result.tools[0].inputSchema.properties.outputDir);
-  assert.ok(responses[1].result.tools[0].inputSchema.properties.downloadPdf);
+  const tools = responses[1].result.tools;
+  const names = tools.map(tool => tool.name);
+  assert.deepEqual(names, [
+    'search_literature',
+    'download_pdfs',
+    'pool_status',
+    'merge_pools',
+    'resolve_citations'
+  ]);
+  const searchTool = tools.find(tool => tool.name === 'search_literature');
+  assert.equal(searchTool.inputSchema.properties.format, undefined);
+  assert.ok(searchTool.inputSchema.properties.outputDir);
+  assert.ok(searchTool.inputSchema.properties.downloadPdf);
+  assert.ok(tools.find(tool => tool.name === 'download_pdfs').inputSchema.properties.retry);
+  assert.ok(tools.find(tool => tool.name === 'merge_pools').inputSchema.properties.outputDir);
+}
+
+async function testMcpPoolWorkflowTools(env) {
+  const tempDir = mkdtempSync(join(tmpdir(), 'lit-search-mcp-pool-'));
+  const poolDir = join(tempDir, 'pool1');
+  const mergedDir = join(tempDir, 'merged');
+  const fixture = {
+    metadata: {
+      query: 'fixture',
+      queryExpansion: 'none',
+      searchScope: 'default-engine-search',
+      keywords: ['fixture'],
+      totalRetrieved: 1,
+      afterDedup: 1,
+      afterFilter: 1,
+      finalCount: 1,
+      engineStats: []
+    },
+    papers: [
+      {
+        seq_id: 1,
+        citation_key: 'Fixture2024_1',
+        entry_type: 'article',
+        title: 'Fixture Paper',
+        authors: ['Alice Smith'],
+        author: 'Alice Smith',
+        year: 2024,
+        journal: 'Fixture Journal',
+        doi: '10.1000/fixture',
+        url: 'https://doi.org/10.1000/fixture',
+        pdf_url: null,
+        source: 'fixture'
+      }
+    ]
+  };
+
+  try {
+    writeResultFiles(fixture, poolDir, { mode: 'test', outputDir: poolDir });
+    const poolPath = join(poolDir, 'pdf_status.md');
+
+    const responses = await interactWithMcp([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
+      { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pool_status', arguments: { poolPath } } },
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'download_pdfs', arguments: { poolPath, retry: 'missing' } } },
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } }
+    ], env);
+
+    const byId = new Map(responses.map(response => [response.id, response]));
+    assert.equal(byId.get(2).result.structuredContent.summary.papers, 1);
+    assert.equal(byId.get(3).result.structuredContent.pdfSummary.skipped, 1);
+    assert.equal(byId.get(4).result.structuredContent.papers.length, 1);
+    assert.ok(existsSync(join(mergedDir, 'literature_pool.md')));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function testParallelSourceOrchestration() {

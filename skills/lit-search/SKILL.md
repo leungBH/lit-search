@@ -59,7 +59,7 @@ Default guidance:
 
 ## Preferred MCP Workflow
 
-If the MCP tool `search_literature` is available, call it first.
+If the MCP tool `search_literature` is available, call it first for discovery.
 
 Example:
 
@@ -88,6 +88,13 @@ After the tool returns, inspect:
 
 The MCP response also includes Markdown and BibTeX text content, but the local files are the durable output. Prefer `downloadPdf: false` for discovery; download PDFs later from the pool if needed.
 
+For follow-up workflows, use the MCP tools that mirror the CLI:
+
+- `download_pdfs`: download or retry PDFs from an existing pool path.
+- `pool_status`: summarize paper count and PDF status for a pool.
+- `merge_pools`: merge multiple pool paths into one deduplicated pool.
+- `resolve_citations`: resolve copied reference entries from a text file into a pool.
+
 ## CLI Fallback
 
 If MCP is unavailable, run the CLI.
@@ -108,6 +115,7 @@ Download PDFs later:
 
 ```bash
 lit-search pdf ./lit_search_20260518_153020
+lit-search pdf ./lit_search_20260518_153020/pdf_status.md --retry failed
 ```
 
 Inspect a pool:
@@ -139,6 +147,7 @@ Useful options:
 --output-dir <dir>       parent directory for generated result folders
 --pdf                    download PDFs after writing literature pool files
 --no-pdf                 do not download PDFs (default)
+--retry <mode>           PDF retry mode for pdf: all|failed|missing
 ```
 
 ## Output Handling

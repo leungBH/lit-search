@@ -102,7 +102,7 @@ lit-search "machine learning" --output-dir ./results
 ```text
 lit-search [query] [options]
 lit-search search [query] [options]
-lit-search pdf <pool-folder|literature_pool.json|pdf_status.md>
+lit-search pdf <pool-folder|literature_pool.json|pdf_status.md> [--retry all|failed|missing]
 lit-search status <pool-folder|literature_pool.json|pdf_status.md>
 lit-search merge <pool...> -o <output-dir>
 lit-search resolve <citations.txt> [options]
@@ -117,6 +117,7 @@ Options:
   --output-dir <dir>       生成结果文件夹的父目录
   --pdf                    检索落盘后继续下载 PDF
   --no-pdf                 不下载 PDF，默认行为
+  --retry <mode>           pdf 子命令的重试范围：all|failed|missing，默认 all
   -h, --help               显示帮助
   -v, --version            显示版本
 ```
@@ -198,7 +199,7 @@ lit_search_20260518_153020/
 
 ```text
 - PDF: https://arxiv.org/pdf/2404.14450v1.pdf
-- 备注: PDF 下载成功
+- 备注: PDF 未下载。运行 lit-search pdf 下载可访问的 PDF。
 ```
 
 ```text
@@ -311,9 +312,13 @@ node bin/lit-search-mcp.js
 
 ```text
 search_literature
+download_pdfs
+pool_status
+merge_pools
+resolve_citations
 ```
 
-参数：
+`search_literature` 参数：
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
@@ -326,7 +331,16 @@ search_literature
 | `outputDir` | string | 生成结果文件夹的父目录；仍会自动创建时间戳结果子文件夹 |
 | `downloadPdf` | boolean | 是否立即下载 PDF，默认 `false` |
 
-MCP 和 CLI 使用同一个底层 workflow。调用后会创建文献池文件夹，写入 `literature_pool.md`、`literature_pool.json`、`references.bib`、`pdf_status.md` 和 `search_meta.json`，并返回 Markdown、BibTeX、结构化文献数据、输出路径和 PDF 状态。默认不下载 PDF；需要一体化下载时传 `downloadPdf: true`。一次 workflow 会并发检索已启用的数据源，但同一数据源内的多个关键词仍会串行请求，以降低触发上游 API 限制的风险。
+MCP 和 CLI 使用同一套底层 workflow。`search_literature` 调用后会创建文献池文件夹，写入 `literature_pool.md`、`literature_pool.json`、`references.bib`、`pdf_status.md` 和 `search_meta.json`，并返回 Markdown、BibTeX、结构化文献数据、输出路径和 PDF 状态。默认不下载 PDF；需要一体化下载时传 `downloadPdf: true`。一次 workflow 会并发检索已启用的数据源，但同一数据源内的多个关键词仍会串行请求，以降低触发上游 API 限制的风险。
+
+新版 MCP 还提供与 CLI 子命令对应的工具：
+
+| MCP 工具 | 对应 CLI | 用途 |
+| --- | --- | --- |
+| `download_pdfs` | `lit-search pdf` | 基于已有文献池下载或重试下载 PDF |
+| `pool_status` | `lit-search status` | 统计文献数量和 PDF 状态 |
+| `merge_pools` | `lit-search merge` | 合并多批文献池并去重 |
+| `resolve_citations` | `lit-search resolve` | 从参考文献条目反查具体文献 |
 
 Agent 调用后应优先查看：
 
@@ -339,7 +353,7 @@ Agent 调用后应优先查看：
 - `structuredContent.output.pdfDir`
 - `structuredContent.pdfSummary`
 
-工具返回的第一段文本也会直接列出 Markdown、BibTeX 和 PDF 目录路径。
+工具返回的第一段文本也会直接列出文献池、BibTeX、PDF 状态、机器可读 JSON 和 PDF 目录路径。
 
 ## 通过 Skills 使用
 
@@ -374,17 +388,17 @@ C:\Users\<你的用户名>\.codex\skills\lit-search
 安装后重启 Codex 客户端。之后可以这样提问：
 
 ```text
-帮我检索 ontology, knowledge graph, semantic web 相关论文，2020 年以后，每个关键词每个数据源 5 篇，保存 BibTeX 和 PDF。
+帮我检索 ontology, knowledge graph, semantic web 相关论文，2020 年以后，每个关键词每个数据源 5 篇，保存文献池和 BibTeX；如果我明确要求全文，再下载 PDF。
 ```
 
-Skill 会引导智能体优先调用 MCP 的 `search_literature`，并在结果生成后查看：
+Skill 会引导智能体优先调用 MCP 的 `search_literature`，需要后续处理时再调用 `download_pdfs`、`pool_status`、`merge_pools` 或 `resolve_citations`，并在结果生成后查看：
 
 - `literature_pool.md`
 - `literature_pool.json`
 - `references.bib`
 - `pdf_status.md`
 - `pdfs/`
-- PDF 下载备注或 `pdfSummary`
+- PDF 下载备注、`pdf_status.md` 或 `pdfSummary`
 
 ### Agent 调用建议
 
@@ -515,6 +529,7 @@ lit-search/
 │   ├── output.js
 │   ├── output-files.js
 │   ├── pdf-downloader.js
+│   ├── pool-ops.js
 │   ├── search.js
 │   ├── workflow.js
 │   └── apis/
@@ -526,6 +541,7 @@ lit-search/
 │       ├── core.js
 │       └── request-utils.js
 ├── diagnose.js
+├── skills/
 ├── test.js
 ├── package.json
 └── README.md
