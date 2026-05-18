@@ -32,9 +32,10 @@ server.registerTool(
     description: [
       'Search academic literature across Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE.',
       'This tool does not only return metadata: every call creates a local result folder.',
-      'The folder always contains results.md, references.bib, and a pdfs/ subfolder for downloaded PDFs.',
-      'Read structuredContent.output for outputDir, markdownFile, bibFile, and pdfDir.',
-      'Read structuredContent.pdfSummary for PDF download success/failure diagnostics.',
+      'By default it only searches and writes the literature pool; it does not download PDFs unless downloadPdf=true.',
+      'The folder always contains literature_pool.md, literature_pool.json, references.bib, pdf_status.md, and a pdfs/ subfolder.',
+      'Read structuredContent.output for outputDir, literaturePoolFile, bibFile, pdfStatusFile, poolJsonFile, and pdfDir.',
+      'Read structuredContent.pdfSummary for PDF status and download diagnostics.',
       'lit-search already searches enabled literature sources inside one tool call; do not split one research request into parallel lit-search subtasks.',
       'Agent guidance: treat each independent concept as a separate keyword.',
       'Use comma-separated query text such as "ontology, knowledge graph, semantic web".',
@@ -50,7 +51,8 @@ server.registerTool(
       yearEnd: z.number().optional().describe('Inclusive end year.'),
       queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none. Use pairwise/full only after splitting concepts into keywords.'),
       searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search for recall; title-only is strict.'),
-      outputDir: z.string().optional().describe('Parent directory for generated result folders. The tool still creates a timestamped result folder containing results.md, references.bib, and pdfs/.')
+      outputDir: z.string().optional().describe('Parent directory for generated result folders. The tool still creates a timestamped result folder containing literature_pool.md, references.bib, pdf_status.md, and pdfs/.'),
+      downloadPdf: z.boolean().optional().describe('Whether to download PDFs immediately. Default false; prefer false for agent workflows, then call CLI pdf workflow explicitly if needed.')
     }
   },
   async args => {
@@ -71,7 +73,8 @@ server.registerTool(
       ),
       apiKeys: getResolvedApiKeys(config),
       logger: silentLogger,
-      outputBaseDir: args.outputDir || process.cwd()
+      outputBaseDir: args.outputDir || process.cwd(),
+      downloadPdf: args.downloadPdf === true
     });
 
     workflow.result.metadata.agentGuidance = agentGuidance;
@@ -142,14 +145,16 @@ function buildMcpOutputSummary(workflow) {
     'lit-search completed.',
     '',
     'Local files created:',
-    `- Markdown: ${workflow.output.markdownFile}`,
+    `- Literature pool: ${workflow.output.literaturePoolFile}`,
     `- BibTeX: ${workflow.output.bibFile}`,
+    `- PDF status: ${workflow.output.pdfStatusFile}`,
+    `- Machine-readable pool: ${workflow.output.poolJsonFile}`,
     `- PDFs: ${workflow.output.pdfDir}`,
     '',
-    `PDF downloads: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
+    `PDF status: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
     '',
-    'Use results.md for readable paper summaries, references.bib for Zotero/EndNote/Mendeley citation import, and the pdfs/ folder for downloaded full texts.',
-    'If a PDF failed, inspect structuredContent.pdfSummary.results or the PDF field in results.md for the failure reason and suggested next action.',
+    'Use literature_pool.md for readable paper summaries, references.bib for Zotero/EndNote/Mendeley citation import, pdf_status.md for PDF status, and the pdfs/ folder for downloaded full texts.',
+    'If a PDF failed or has not been downloaded, inspect structuredContent.pdfSummary.results or pdf_status.md for the reason and suggested next action.',
     'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.'
   ].join('\n');
 }

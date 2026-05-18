@@ -88,9 +88,11 @@ function testCliHelp() {
   });
 
   assert.match(output, /lit-search init/);
-  assert.match(output, /results\.md/);
+  assert.match(output, /literature_pool\.md/);
   assert.match(output, /references\.bib/);
+  assert.match(output, /pdf_status\.md/);
   assert.match(output, /--output-dir/);
+  assert.match(output, /--pdf/);
   assert.doesNotMatch(output, /--format/);
 }
 
@@ -182,6 +184,7 @@ async function testMcpHandshake(env) {
   assert.equal(responses[1].result.tools[0].name, 'search_literature');
   assert.equal(responses[1].result.tools[0].inputSchema.properties.format, undefined);
   assert.ok(responses[1].result.tools[0].inputSchema.properties.outputDir);
+  assert.ok(responses[1].result.tools[0].inputSchema.properties.downloadPdf);
 }
 
 function testParallelSourceOrchestration() {
@@ -214,6 +217,7 @@ async function runNetworkTest(test, env) {
     assert.equal(toolResult.content.length, 3);
     assert.match(toolResult.content[0].text, /Local files created:/);
     assert.match(toolResult.content[0].text, /references\.bib/);
+    assert.match(toolResult.content[0].text, /pdf_status\.md/);
     assert.match(toolResult.content[0].text, /pdfs/);
     assert.match(toolResult.content[1].text, /# lit-search Results/);
     assert.match(toolResult.content[2].text, /^% lit-search results/m);
@@ -234,11 +238,13 @@ async function runNetworkTest(test, env) {
 
     const outputDir = findNewestOutputDir(tempDir);
     assert.ok(outputDir, 'No output directory found.');
-    assert.ok(existsSync(join(outputDir, 'results.md')));
+    assert.ok(existsSync(join(outputDir, 'literature_pool.md')));
     assert.ok(existsSync(join(outputDir, 'references.bib')));
+    assert.ok(existsSync(join(outputDir, 'pdf_status.md')));
+    assert.ok(existsSync(join(outputDir, 'literature_pool.json')));
     assert.ok(existsSync(join(outputDir, 'pdfs')));
 
-    const markdown = readFileSync(join(outputDir, 'results.md'), 'utf-8');
+    const markdown = readFileSync(join(outputDir, 'literature_pool.md'), 'utf-8');
     const bib = readFileSync(join(outputDir, 'references.bib'), 'utf-8');
     assert.match(markdown, /Final count:/);
     assert.match(bib, /^% lit-search results/m);

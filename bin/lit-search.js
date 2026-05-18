@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
-import { generateOutputFolderName } from '../lib/output-files.js';
-import { runLitSearchWorkflow } from '../lib/workflow.js';
+import { generateOutputFolderName, readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
+import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
+import { mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
 import {
   createAppConfig,
   getResolvedApiKeys,
@@ -30,7 +31,8 @@ function parseArgs(args) {
     yearEnd: null,
     queryExpansion: 'none',
     searchScope: 'default-engine-search',
-    outputBaseDir: process.cwd()
+    outputBaseDir: process.cwd(),
+    downloadPdf: false
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -48,6 +50,10 @@ function parseArgs(args) {
       options.searchScope = normalizeSearchScope(args[++i]);
     } else if (arg === '--output-dir') {
       options.outputBaseDir = resolve(args[++i] || process.cwd());
+    } else if (arg === '--pdf') {
+      options.downloadPdf = true;
+    } else if (arg === '--no-pdf') {
+      options.downloadPdf = false;
     } else if (arg === '--format') {
       console.error(chalk.red('The --format option has been removed. lit-search now always writes md and bib outputs.'));
       process.exit(1);
@@ -71,6 +77,11 @@ lit-search v${packageJson.version}
 
 Usage:
   lit-search [query] [options]
+  lit-search search [query] [options]
+  lit-search pdf <pool-folder|literature_pool.json>
+  lit-search status <pool-folder|literature_pool.json>
+  lit-search merge <pool...> -o <output-dir>
+  lit-search resolve <citations.txt> [options]
   lit-search init
 
 Arguments:
@@ -83,18 +94,27 @@ Options:
   --expand <mode>          Query expansion: none|pairwise|full (default: none)
   --search-scope <mode>    title-only|title-abstract|default-engine-search
   --output-dir <dir>       Parent directory for generated result folders
+  --pdf                    Download PDFs after writing literature pool files
+  --no-pdf                 Do not download PDFs (default)
   -h, --help               Show help
   -v, --version            Show version
 
 Output:
   A new folder is created for each run. It contains:
-  - results.md
+  - literature_pool.md
+  - literature_pool.json
   - references.bib
+  - pdf_status.md
   - pdfs/
 
 Examples:
   lit-search init
   lit-search "machine learning" -l 5 -s 2022
+  lit-search search "machine learning" --pdf
+  lit-search pdf .\\lit_search_20260518_153020
+  lit-search status .\\lit_search_20260518_153020
+  lit-search merge .\\batch1 .\\batch2 -o .\\merged
+  lit-search resolve .\\citations.txt --output-dir .\\resolved
   lit-search "machine learning" -l 5 --output-dir ./results
   lit-search "AI, coding, agent" --expand pairwise --search-scope title-abstract
 `);
@@ -135,14 +155,32 @@ async function main() {
     return;
   }
 
-  const options = parseArgs(args);
+  const command = args[0];
+  if (command === 'pdf') {
+    await runPdfCommand(args.slice(1));
+    return;
+  }
+  if (command === 'status') {
+    await runStatusCommand(args.slice(1));
+    return;
+  }
+  if (command === 'merge') {
+    await runMergeCommand(args.slice(1));
+    return;
+  }
+  if (command === 'resolve') {
+    await runResolveCommand(args.slice(1));
+    return;
+  }
+
+  const options = parseArgs(command === 'search' ? args.slice(1) : args);
   if (!options.query) {
     console.error(chalk.red('Please provide a search query.'));
     console.log('Example: lit-search "machine learning" -l 5 -s 2022');
     process.exit(1);
   }
 
-  const outputFolderName = generateOutputFolderName(options.query);
+  const outputFolderName = generateOutputFolderName();
   const plannedOutputDir = join(options.outputBaseDir, outputFolderName);
 
   console.log(chalk.bold.blue('\nlit-search\n'));
@@ -171,6 +209,7 @@ async function main() {
       engines: config.get('engines') || {},
       apiKeys: getResolvedApiKeys(config),
       outputBaseDir: options.outputBaseDir,
+      downloadPdf: options.downloadPdf,
       hooks: {
         onBeforePdfDownload: () => {
           if (process.stdout.isTTY) {
@@ -188,9 +227,10 @@ async function main() {
       console.log(chalk.green(`Done. ${result.papers.length} papers found.`));
     }
     console.log(chalk.green(`\nResult folder: ${output.outputDir}`));
-    console.log(`  Markdown: ${output.markdownFile}`);
-    console.log(`  BibTeX:   ${output.bibFile}`);
-    console.log(`  PDFs:     ${pdfSummary.pdfDir} (${pdfSummary.downloaded}/${pdfSummary.total} downloaded)`);
+    console.log(`  Literature pool: ${output.literaturePoolFile}`);
+    console.log(`  BibTeX:          ${output.bibFile}`);
+    console.log(`  PDF status:      ${output.pdfStatusFile}`);
+    console.log(`  PDFs:            ${pdfSummary.pdfDir} (${pdfSummary.downloaded}/${pdfSummary.total} downloaded)`);
 
     console.log(chalk.bold('\nSummary:'));
     console.log(`  Retrieved:    ${result.metadata.totalRetrieved}`);
@@ -217,6 +257,101 @@ async function main() {
     console.error(chalk.red(error.message));
     process.exit(1);
   }
+}
+
+async function runPdfCommand(args) {
+  const target = args[0];
+  if (!target) {
+    throw new Error('Please provide a pool folder or literature_pool.json path.');
+  }
+  const poolFile = resolvePoolPath(target);
+  const pool = readLiteraturePool(poolFile);
+  const retryMode = getOptionValue(args, '--retry') || 'all';
+  const targetPapers = filterPapersForPdfRetry(pool.papers || [], retryMode);
+  const outputDir = dirname(poolFile);
+  const spinner = process.stdout.isTTY ? ora('Downloading PDFs...').start() : null;
+  const workflow = await downloadPoolPdfs(pool, outputDir, { logger: console, papers: targetPapers });
+  if (spinner) spinner.succeed('PDF download complete.');
+  console.log(chalk.green(`PDF status: ${workflow.output.pdfStatusFile}`));
+  console.log(`PDFs: ${workflow.output.pdfDir} (${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded)`);
+}
+
+function filterPapersForPdfRetry(papers, retryMode) {
+  if (retryMode === 'all') return papers;
+  if (retryMode === 'failed') {
+    return papers.filter(paper => paper.pdf_url && paper.pdf_download?.status !== 'success');
+  }
+  if (retryMode === 'missing') {
+    return papers.filter(paper => !paper.pdf_url);
+  }
+  return papers;
+}
+
+async function runStatusCommand(args) {
+  const target = args[0];
+  if (!target) {
+    throw new Error('Please provide a pool folder or literature_pool.json path.');
+  }
+  const pool = readLiteraturePool(target);
+  const summary = summarizePool(pool);
+  console.log(chalk.bold('\nlit-search status\n'));
+  console.log(`Papers: ${summary.papers}`);
+  console.log(`PDF downloaded: ${summary.pdf.downloaded}`);
+  console.log(`PDF not attempted: ${summary.pdf.notAttempted}`);
+  console.log(`PDF missing URL: ${summary.pdf.missingUrl}`);
+  console.log(`PDF failed: ${summary.pdf.failed}`);
+  console.log(`PDF skipped: ${summary.pdf.skipped}`);
+}
+
+async function runMergeCommand(args) {
+  const outputIndex = args.findIndex(arg => arg === '-o' || arg === '--output-dir');
+  const outputDir = outputIndex >= 0 ? resolve(args[outputIndex + 1]) : resolve('merged_literature');
+  const inputs = (outputIndex >= 0 ? args.slice(0, outputIndex) : args).flatMap(expandInputPattern);
+  if (!inputs.length) {
+    throw new Error('Please provide at least one pool folder or literature_pool.json path.');
+  }
+  const result = mergePools(inputs, outputDir);
+  console.log(chalk.green(`Merged ${inputs.length} pool(s) into ${outputDir}`));
+  console.log(`Papers: ${result.pool.papers.length}`);
+  console.log(`Literature pool: ${result.files.literaturePoolFile}`);
+  console.log(`BibTeX: ${result.files.bibFile}`);
+}
+
+async function runResolveCommand(args) {
+  const file = args[0];
+  if (!file) {
+    throw new Error('Please provide a citations text file.');
+  }
+  const options = parseArgs(args.slice(1));
+  const outputDir = options.outputBaseDir === process.cwd()
+    ? join(process.cwd(), generateOutputFolderName())
+    : options.outputBaseDir;
+  const result = await resolveCitationsFile(file, {
+    limit: options.limit,
+    outputDir,
+    apiKeys: getResolvedApiKeys(config),
+    engines: config.get('engines') || {},
+    logger: console
+  });
+  console.log(chalk.green(`Resolved citations into ${outputDir}`));
+  console.log(`Resolved: ${result.pool.papers.length}`);
+  console.log(`Unresolved: ${result.unresolved.length}`);
+}
+
+function expandInputPattern(pattern) {
+  if (!pattern.includes('*')) return [pattern];
+  const absolute = resolve(pattern);
+  const dir = dirname(absolute);
+  const regex = new RegExp(`^${absolute.split(/[\\/]/).pop().replace(/\*/g, '.*')}$`);
+  return readdirSync(dir)
+    .filter(name => regex.test(name))
+    .map(name => join(dir, name))
+    .filter(path => existsSync(path));
+}
+
+function getOptionValue(args, name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : null;
 }
 
 async function runInit() {
@@ -273,4 +408,7 @@ function resolveInitValue(input, currentValue) {
   return String(input).trim() || currentValue || null;
 }
 
-main();
+main().catch(error => {
+  console.error(chalk.red(error.message));
+  process.exit(1);
+});

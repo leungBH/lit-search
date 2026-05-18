@@ -5,7 +5,7 @@ description: Use this skill whenever the user asks to search academic papers, co
 
 # Lit Search
 
-Use `lit-search` for academic literature retrieval. It searches Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE, then creates a local result folder containing readable Markdown, BibTeX, and downloaded PDFs when available.
+Use `lit-search` for academic literature retrieval and literature-pool management. It searches Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE, then creates a local literature pool. By default it does not download PDFs; run the PDF workflow explicitly when full texts are needed.
 
 ## When To Use
 
@@ -15,6 +15,8 @@ Use this skill when the user asks to:
 - find references for a topic, thesis, report, or literature review
 - generate BibTeX for Zotero, EndNote, Mendeley, or LaTeX
 - download paper PDFs or inspect PDF availability
+- resolve known citation strings into complete paper metadata
+- merge multiple literature search batches
 - collect scholarly metadata such as DOI, abstract, authors, venue, year, keywords, or citation details
 
 Do not use lit-search as a general web search tool for non-academic pages, news, products, or tutorials.
@@ -68,19 +70,23 @@ Example:
   "yearStart": 2020,
   "queryExpansion": "none",
   "searchScope": "default-engine-search",
-  "outputDir": "D:/lit-search-results"
+  "outputDir": "D:/lit-search-results",
+  "downloadPdf": false
 }
 ```
 
 After the tool returns, inspect:
 
 - `structuredContent.output.outputDir`
+- `structuredContent.output.literaturePoolFile`
 - `structuredContent.output.markdownFile`
 - `structuredContent.output.bibFile`
+- `structuredContent.output.pdfStatusFile`
+- `structuredContent.output.poolJsonFile`
 - `structuredContent.output.pdfDir`
 - `structuredContent.pdfSummary`
 
-The MCP response also includes Markdown and BibTeX text content, but the local files are the durable output.
+The MCP response also includes Markdown and BibTeX text content, but the local files are the durable output. Prefer `downloadPdf: false` for discovery; download PDFs later from the pool if needed.
 
 ## CLI Fallback
 
@@ -98,6 +104,30 @@ Local source checkout:
 node bin/lit-search.js "ontology, knowledge graph, semantic web" -l 5 -s 2020 --output-dir ./results
 ```
 
+Download PDFs later:
+
+```bash
+lit-search pdf ./lit_search_20260518_153020
+```
+
+Inspect a pool:
+
+```bash
+lit-search status ./lit_search_20260518_153020
+```
+
+Resolve known citations:
+
+```bash
+lit-search resolve ./citations.txt --output-dir ./resolved
+```
+
+Merge batches:
+
+```bash
+lit-search merge ./batch1 ./batch2 -o ./merged
+```
+
 Useful options:
 
 ```text
@@ -107,25 +137,32 @@ Useful options:
 --expand <mode>          none|pairwise|full
 --search-scope <mode>    title-only|title-abstract|default-engine-search
 --output-dir <dir>       parent directory for generated result folders
+--pdf                    download PDFs after writing literature pool files
+--no-pdf                 do not download PDFs (default)
 ```
 
 ## Output Handling
 
-Every search creates a result folder under the current directory or the configured output directory. The generated folder contains:
+Every search creates a literature pool under the current directory or the configured output directory. The generated folder contains:
 
 ```text
-results.md
+literature_pool.md
+literature_pool.json
 references.bib
+pdf_status.md
+search_meta.json
 pdfs/
 ```
 
-Use `results.md` for readable paper summaries. It includes title, abstract, keywords, first authors, year, venue, source, DOI, URL, PDF URL, and notes.
+Use `literature_pool.md` for readable paper summaries. It includes title, abstract, keywords, first authors, year, venue, source, DOI, URL, PDF URL, and notes.
 
 Use `references.bib` for citation import into Zotero, EndNote, Mendeley, or LaTeX.
 
+Use `pdf_status.md` for PDF download state and suggested next actions.
+
 Use `pdfs/` for successfully downloaded PDFs. Not every paper has an accessible direct PDF.
 
-When reporting results to the user, mention the output folder and the Markdown/BibTeX/PDF paths. If PDFs failed, summarize the failure reasons from `results.md` notes or `structuredContent.pdfSummary`.
+When reporting results to the user, mention the output folder and the literature_pool/BibTeX/PDF-status paths. If PDFs failed or were not attempted, summarize the reasons from `pdf_status.md` or `structuredContent.pdfSummary`.
 
 ## PDF Safety
 

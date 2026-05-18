@@ -6,7 +6,7 @@
 
 面向研究和写作场景的学术文献检索 CLI / MCP 服务。
 
-`lit-search` 可以同时检索 Semantic Scholar、OpenAlex、arXiv、CrossRef 和 CORE，自动去重、过滤、排序，并为每次检索生成一个结果文件夹，包含可阅读的 Markdown、可导入文献管理工具的 BibTeX，以及可下载的 PDF 原文。
+`lit-search` 可以同时检索 Semantic Scholar、OpenAlex、arXiv、CrossRef 和 CORE，自动去重、过滤、排序，并为每次检索生成一个文献池文件夹。默认只保存文献结果，不自动下载 PDF；PDF 下载、状态统计、批量合并和引文反查可以分阶段执行。
 
 ## 特性
 
@@ -15,9 +15,10 @@
 - **相关性排序**：结合标题/摘要关键词匹配度和引用数排序。
 - **多关键词策略**：支持原词检索、两两组合、全组合。
 - **检索范围控制**：支持标题检索、标题+摘要检索、各数据源默认检索。
-- **固定输出结构**：每次检索自动生成 `results.md`、`references.bib` 和 `pdfs/`。
+- **文献池输出**：每次检索自动生成 `literature_pool.md`、`literature_pool.json`、`references.bib`、`pdf_status.md` 和 `pdfs/`。
 - **BibTeX 导出**：可导入 Zotero、EndNote、Mendeley 或 LaTeX 工作流。
-- **PDF 下载诊断**：记录下载成功、无 PDF、登录墙、人机核验、非 PDF 页面、限流等情况。
+- **分阶段 PDF 下载**：默认不下载 PDF；显式执行 `lit-search pdf` 或 `--pdf` 后才下载，并记录下载成功、无 PDF、登录墙、人机核验、非 PDF 页面、限流等情况。
+- **文献池管理**：支持 `status`、`merge` 和 `resolve`，可统计 PDF 状态、合并多批检索结果、从参考文献条目反查文献。
 - **MCP 服务**：可接入 Trae 等支持 MCP 的 AI 编程工具。
 - **Skills 支持**：内置面向智能体的 `lit-search` Skill，帮助 Codex 等客户端正确拆分关键词、调用 MCP/CLI 并读取输出文件。
 - **跨平台**：支持 Windows、macOS、Linux。
@@ -84,7 +85,13 @@ $env:LIT_SEARCH_CORE_API_KEY="your-core-api-key"
 
 ```bash
 lit-search "machine learning"
+lit-search search "machine learning"
 lit-search "AI, coding, agent" -l 5 -s 2023
+lit-search "AI, coding, agent" --pdf
+lit-search pdf .\lit_search_20260518_153020
+lit-search status .\lit_search_20260518_153020
+lit-search merge .\batch1 .\batch2 -o .\merged
+lit-search resolve .\citations.txt --output-dir .\resolved
 lit-search "AI, coding, agent" --expand pairwise
 lit-search "computer vision" --search-scope title-only
 lit-search "machine learning" --output-dir ./results
@@ -94,6 +101,11 @@ lit-search "machine learning" --output-dir ./results
 
 ```text
 lit-search [query] [options]
+lit-search search [query] [options]
+lit-search pdf <pool-folder|literature_pool.json|pdf_status.md>
+lit-search status <pool-folder|literature_pool.json|pdf_status.md>
+lit-search merge <pool...> -o <output-dir>
+lit-search resolve <citations.txt> [options]
 lit-search init
 
 Options:
@@ -103,11 +115,13 @@ Options:
   --expand <mode>          查询展开策略：none|pairwise|full，默认 none
   --search-scope <mode>    检索范围：title-only|title-abstract|default-engine-search
   --output-dir <dir>       生成结果文件夹的父目录
+  --pdf                    检索落盘后继续下载 PDF
+  --no-pdf                 不下载 PDF，默认行为
   -h, --help               显示帮助
   -v, --version            显示版本
 ```
 
-> `limit` 是“每个关键词、每个数据源”的上限，不是最终结果数量上限。
+> `limit` 是“每个关键词、每个数据源”的上限，不是最终结果数量上限。默认 `lit-search "query"` 等价于 `lit-search search "query"`，只生成文献池，不自动下载 PDF。
 
 ## 多关键词与查询展开
 
@@ -143,24 +157,28 @@ lit-search "ontology, knowledge graph, semantic web" -l 5
 
 ## 输出结果
 
-每次运行都会创建一个结果文件夹。默认保存在当前目录，也可以通过 `--output-dir <dir>` 指定父目录，例如：
+每次 search 都会创建一个文献池文件夹。默认保存在当前目录，也可以通过 `--output-dir <dir>` 指定父目录，例如：
 
 ```text
-results/machinelearning_20260511_153020/
+results/lit_search_20260518_153020/
 ```
 
 目录结构：
 
 ```text
-machinelearning_20260511_153020/
-├── results.md
+lit_search_20260518_153020/
+├── literature_pool.md
+├── literature_pool.json
 ├── references.bib
+├── pdf_status.md
+├── search_meta.json
+├── results.md
 └── pdfs/
 ```
 
-### `results.md`
+### `literature_pool.md`
 
-面向阅读的 Markdown 文件。每篇文献保留：
+面向阅读的 Markdown 文献池文件。每篇文献保留：
 
 - 标题
 - 摘要
@@ -172,7 +190,9 @@ machinelearning_20260511_153020/
 - DOI
 - URL
 - PDF 链接
-- 备注，展示 PDF 下载成功或失败原因
+- 备注，展示 PDF 是否已下载、未尝试或失败原因
+
+`results.md` 目前作为兼容别名继续生成，内容与 `literature_pool.md` 一致。
 
 示例：
 
@@ -210,9 +230,19 @@ BibTeX 引文文件，可导入 Zotero、EndNote、Mendeley，也可用于 LaTeX
 - `archiveprefix`
 - `primaryclass`
 
+### `pdf_status.md`
+
+独立记录 PDF 状态，适合用户和智能体查看：
+
+- `downloaded`
+- `not_attempted`
+- `missing_url`
+- `failed`
+- `skipped`
+
 ### `pdfs/`
 
-保存成功下载的 PDF 原文。并非所有数据源返回的 PDF URL 都能自动下载；失败原因会记录在 `results.md` 的“备注”字段和 MCP 的 `pdfSummary` 中。
+保存成功下载的 PDF 原文。默认 search 不会下载 PDF；运行 `lit-search pdf <pool>` 或 search 时加 `--pdf` 才会写入文件。失败原因会记录在 `pdf_status.md` 和 MCP 的 `pdfSummary` 中。
 
 ## PDF 下载说明
 
@@ -294,14 +324,18 @@ search_literature
 | `queryExpansion` | string | `none` / `pairwise` / `full` |
 | `searchScope` | string | `title-only` / `title-abstract` / `default-engine-search` |
 | `outputDir` | string | 生成结果文件夹的父目录；仍会自动创建时间戳结果子文件夹 |
+| `downloadPdf` | boolean | 是否立即下载 PDF，默认 `false` |
 
-MCP 和 CLI 使用同一个底层 workflow。调用后会创建结果文件夹、下载 PDF、写入 `results.md` 和 `references.bib`，并返回 Markdown、BibTeX、结构化文献数据、输出路径和 PDF 下载诊断。一次 workflow 会并发检索已启用的数据源，但同一数据源内的多个关键词仍会串行请求，以降低触发上游 API 限制的风险。
+MCP 和 CLI 使用同一个底层 workflow。调用后会创建文献池文件夹，写入 `literature_pool.md`、`literature_pool.json`、`references.bib`、`pdf_status.md` 和 `search_meta.json`，并返回 Markdown、BibTeX、结构化文献数据、输出路径和 PDF 状态。默认不下载 PDF；需要一体化下载时传 `downloadPdf: true`。一次 workflow 会并发检索已启用的数据源，但同一数据源内的多个关键词仍会串行请求，以降低触发上游 API 限制的风险。
 
 Agent 调用后应优先查看：
 
 - `structuredContent.output.outputDir`
+- `structuredContent.output.literaturePoolFile`
 - `structuredContent.output.markdownFile`
 - `structuredContent.output.bibFile`
+- `structuredContent.output.pdfStatusFile`
+- `structuredContent.output.poolJsonFile`
 - `structuredContent.output.pdfDir`
 - `structuredContent.pdfSummary`
 
@@ -345,8 +379,10 @@ C:\Users\<你的用户名>\.codex\skills\lit-search
 
 Skill 会引导智能体优先调用 MCP 的 `search_literature`，并在结果生成后查看：
 
-- `results.md`
+- `literature_pool.md`
+- `literature_pool.json`
 - `references.bib`
+- `pdf_status.md`
 - `pdfs/`
 - PDF 下载备注或 `pdfSummary`
 
@@ -371,7 +407,8 @@ Skill 会引导智能体优先调用 MCP 的 `search_literature`，并在结果�
   "limit": 5,
   "queryExpansion": "none",
   "searchScope": "default-engine-search",
-  "outputDir": "D:/lit-search-results"
+  "outputDir": "D:/lit-search-results",
+  "downloadPdf": false
 }
 ```
 
@@ -441,7 +478,7 @@ C:\nvm4w\nodejs\node.exe .\bin\lit-search.js "AI, coding, agent" -l 3 -s 2023
 当我要求检索学术文献时，请在 D:\lit-search 下运行：
 C:\nvm4w\nodejs\node.exe .\bin\lit-search.js "<query>" -l <limit> -s <year>
 
-命令完成后，打开最新生成的结果文件夹，阅读 results.md。references.bib 用于引用导出，PDF 原文在 pdfs 子文件夹中。如果 PDF 下载失败，查看 results.md 的“备注”字段。
+命令完成后，打开最新生成的结果文件夹，阅读 literature_pool.md。references.bib 用于引用导出，pdf_status.md 用于查看 PDF 状态；需要下载 PDF 时再运行 lit-search pdf <结果文件夹>。PDF 原文在 pdfs 子文件夹中。
 ```
 
 ## 测试
