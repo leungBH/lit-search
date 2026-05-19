@@ -163,7 +163,7 @@ search_meta.json
 pdfs/
 ```
 
-Use `literature_pool.md` for readable paper summaries. It includes title, abstract, keywords, first authors, year, venue, source, DOI, URL, PDF URL, and notes.
+Use `literature_pool.md` for readable paper summaries. It includes title, abstract, keywords, first authors, year, venue, source, DOI, URL, ranked `pdf_candidates[]`, and notes.
 
 Use `references.bib` for citation import into Zotero, EndNote, Mendeley, or LaTeX.
 

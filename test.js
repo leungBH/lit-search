@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import chalk from 'chalk';
 import { renderOutput } from './lib/output.js';
 import { writeResultFiles } from './lib/output-files.js';
+import { normalizePdfCandidates } from './lib/pdf-candidates.js';
 import { generateQueries } from './lib/search.js';
 
 const cliEntry = resolve(process.cwd(), 'bin/lit-search.js');
@@ -47,6 +48,7 @@ async function main() {
 
   results.push(await runTest('CLI help', testCliHelp));
   results.push(await runTest('renderers', testRenderers));
+  results.push(await runTest('PDF candidate normalization', testPdfCandidateNormalization));
   results.push(await runTest('query expansion', testQueryExpansion));
   results.push(await runTest('parallel source orchestration', testParallelSourceOrchestration));
   results.push(await runTest('MCP handshake', () => testMcpHandshake(keyEnv)));
@@ -127,7 +129,19 @@ function testRenderers() {
         pages: '101-120',
         doi: '10.1000/example',
         url: 'https://doi.org/10.1000/example',
-        pdf_url: 'https://example.com/paper.pdf',
+        pdf_candidates: [
+          {
+            url: 'https://example.com/paper.pdf',
+            source: 'openalex',
+            provider: 'example.com',
+            access_type: 'repository',
+            license: 'cc-by',
+            is_oa: true,
+            confidence: 0.8,
+            reason: 'Fixture repository PDF.',
+            rank: 1
+          }
+        ],
         pdf_download: {
           status: 'failed',
           code: 'not_direct_pdf',
@@ -148,12 +162,52 @@ function testRenderers() {
   assert.match(markdown, /# lit-search Results/);
   assert.match(markdown, /A Study on Machine Learning/);
   assert.match(markdown, /作者: Alice Smith, Bob Lee, Carol Wang, 等/);
-  assert.match(markdown, /PDF: https:\/\/example\.com\/paper\.pdf/);
+  assert.match(markdown, /PDF候选: #1 https:\/\/example\.com\/paper\.pdf/);
   assert.match(markdown, /备注: PDF 下载失败：not_direct_pdf/);
-  assert.doesNotMatch(markdown, /PDF: .*not_direct_pdf/);
+  assert.doesNotMatch(markdown, /PDF候选: .*not_direct_pdf/);
   assert.doesNotMatch(markdown, /Citation Count/);
   assert.match(bib, /@article\{Smith2024_1,/);
   assert.match(bib, /pdfurl = \{https:\/\/example\.com\/paper\.pdf\}/);
+  assert.match(bib, /pdfcandidates = \{1:repository:https:\/\/example\.com\/paper\.pdf\}/);
+}
+
+function testPdfCandidateNormalization() {
+  const candidates = normalizePdfCandidates([
+    {
+      source: 'crossref',
+      provider: 'publisher.example',
+      url: 'https://publisher.example/paper.pdf',
+      access_type: 'crossref_pdf_link',
+      license: null,
+      is_oa: false,
+      confidence: 0.52,
+      reason: 'CrossRef PDF link.'
+    },
+    {
+      source: 'arxiv',
+      provider: 'arxiv',
+      url: 'https://arxiv.org/pdf/1234.5678.pdf',
+      access_type: 'arxiv',
+      license: null,
+      is_oa: true,
+      confidence: 0.98,
+      reason: 'arXiv PDF.'
+    }
+  ]);
+
+  assert.equal(candidates[0].access_type, 'arxiv');
+  assert.equal(candidates[0].rank, 1);
+  assert.deepEqual(Object.keys(candidates[0]), [
+    'url',
+    'source',
+    'provider',
+    'access_type',
+    'license',
+    'is_oa',
+    'confidence',
+    'reason',
+    'rank'
+  ]);
 }
 
 function testQueryExpansion() {
@@ -230,7 +284,7 @@ async function testMcpPoolWorkflowTools(env) {
         journal: 'Fixture Journal',
         doi: '10.1000/fixture',
         url: 'https://doi.org/10.1000/fixture',
-        pdf_url: null,
+        pdf_candidates: [],
         source: 'fixture'
       }
     ]

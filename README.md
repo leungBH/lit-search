@@ -190,7 +190,7 @@ lit_search_20260518_153020/
 - 来源
 - DOI
 - URL
-- PDF 链接
+- PDF 候选链接池
 - 备注，展示 PDF 是否已下载、未尝试或失败原因
 
 `results.md` 目前作为兼容别名继续生成，内容与 `literature_pool.md` 一致。
@@ -198,12 +198,12 @@ lit_search_20260518_153020/
 示例：
 
 ```text
-- PDF: https://arxiv.org/pdf/2404.14450v1.pdf
+- PDF候选: #1 https://arxiv.org/pdf/2404.14450v1.pdf (arxiv, confidence 0.98)
 - 备注: PDF 未下载。运行 lit-search pdf 下载可访问的 PDF。
 ```
 
 ```text
-- PDF: https://example.com/paper.pdf
+- PDF候选: #1 https://example.com/paper.pdf (publisher_oa_pdf, confidence 0.6); #2 https://doi.org/10.xxxx/example (doi_landing_page, confidence 0.22)
 - 备注: PDF 下载失败：human_verification_required。The PDF URL appears to require browser-based human verification before access.
 ```
 
@@ -227,6 +227,7 @@ BibTeX 引文文件，可导入 Zotero、EndNote、Mendeley，也可用于 LaTeX
 - `abstract`
 - `keywords`
 - `pdfurl`
+- `pdfcandidates`
 - `eprint`
 - `archiveprefix`
 - `primaryclass`
@@ -247,7 +248,21 @@ BibTeX 引文文件，可导入 Zotero、EndNote、Mendeley，也可用于 LaTeX
 
 ## PDF 下载说明
 
-`lit-search` 只会在响应可验证为真实 PDF 时保存文件，避免把 HTML 落地页误存为 PDF。
+`lit-search` 会为每篇论文生成 `pdf_candidates[]`，不再只依赖单个 PDF URL。每个候选包含：
+
+- `url`
+- `source`
+- `provider`
+- `access_type`
+- `license`
+- `is_oa`
+- `confidence`
+- `reason`
+- `rank`
+
+候选池会按可访问性和可信度排序。优先级大致为：arXiv / PMC / CORE / institutional repository / OpenAlex content API / publisher OA PDF / Crossref PDF link / DOI landing page / browser fallback。
+
+`lit-search` 只会在响应可验证为真实 PDF 时保存文件，避免把 HTML 落地页误存为 PDF。`doi_landing_page` 和 `browser_fallback` 会进入候选池供用户或智能体处理，但不会当作直接 PDF 强行保存。
 
 | 数据源 | PDF 支持 | 说明 |
 | --- | --- | --- |
@@ -261,7 +276,7 @@ BibTeX 引文文件，可导入 Zotero、EndNote、Mendeley，也可用于 LaTeX
 
 | 原因 | 含义 |
 | --- | --- |
-| `no_pdf_url` | 数据源没有提供 PDF 链接 |
+| `no_pdf_candidates` | 没有可直接下载的 PDF 候选 |
 | `not_direct_pdf` | 链接返回 HTML 落地页，不是直接 PDF |
 | `human_verification_required` | 需要浏览器人机核验 |
 | `access_denied_or_bot_check` | 服务器拒绝自动化下载，可能是反爬或防盗链 |
@@ -292,7 +307,7 @@ BibTeX 引文文件，可导入 Zotero、EndNote、Mendeley，也可用于 LaTeX
 | 关键词 | 部分 | 是 | 部分 | 部分 | 部分 |
 | 引用数 | 是 | 是 | 否 | 部分 | 部分 |
 | 卷号、期号、页码 | 部分 | 是 | 否 | 是 | 部分 |
-| PDF URL | 部分 | 部分 | 是 | 部分 | 部分 |
+| PDF 候选池 | 部分 | 是 | 是 | 部分 | 部分 |
 
 ## MCP 服务
 

@@ -114,8 +114,8 @@ server.registerTool(
       'Download PDFs for an existing lit-search literature pool.',
       'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
       'This is the MCP equivalent of "lit-search pdf". It updates literature_pool.md, references.bib, pdf_status.md, and literature_pool.json in place.',
-      'Use retry="failed" to only retry papers with PDF URLs that are not already downloaded.',
-      'Use retry="missing" only to refresh status for papers without PDF URLs; these cannot be downloaded automatically.',
+      'Use retry="failed" to only retry papers with downloadable PDF candidates that are not already downloaded.',
+      'Use retry="missing" only to refresh status for papers without downloadable PDF candidates; these cannot be downloaded automatically.',
       'Do not run multiple PDF download calls in parallel for the same pool.'
     ].join(' '),
     inputSchema: {
