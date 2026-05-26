@@ -266,11 +266,16 @@ server.registerTool(
       'It looks up missing fields by arXiv ID, DOI via OpenAlex and Semantic Scholar, source IDs, then title fallback.',
       'Fields include abstract, keywords, journal/venue, DOI, URL, volume/issue/pages, publisher, language, work_type, identifiers, and pdf_candidates.',
       'It rewrites literature_pool.json, literature_pool.md, references.bib, and search_meta.json in place.',
-      'By default it does not overwrite existing metadata.'
+      'By default it does not overwrite existing metadata.',
+      'For agent workflows that only need abstracts, call with fields="abstract", onlyMissing=true, concurrency=1, and checkpointInterval=5.',
+      'Do not run multiple enrich_metadata calls in parallel for the same pool.'
     ].join(' '),
     inputSchema: {
       poolPath: z.string().min(1).describe('Path to a lit-search result folder or pool file.'),
       fields: z.string().optional().describe('Comma-separated fields to enrich. Default: all supported metadata fields.'),
+      onlyMissing: z.boolean().optional().describe('Only fill missing requested fields. Default false, but existing fields are still preserved unless overwrite=true.'),
+      checkpointInterval: z.number().optional().describe('Save progress every n processed papers. Default: 5. Use 0 to disable checkpoint writes.'),
+      concurrency: z.number().optional().describe('Paper-level enrichment concurrency. Default: 1. Keep 1 unless the user accepts upstream API limit risk.'),
       overwrite: z.boolean().optional().describe('Whether to refresh existing metadata too. Default false.')
     }
   },
@@ -278,7 +283,10 @@ server.registerTool(
     logDebug(`tool enrich_metadata args=${JSON.stringify(args)}`);
     const result = await enrichMetadata(args.poolPath, {
       overwrite: args.overwrite === true,
+      onlyMissing: args.onlyMissing === true,
       fields: args.fields,
+      checkpointInterval: normalizeOptionalNumber(args.checkpointInterval) ?? 5,
+      concurrency: normalizeOptionalNumber(args.concurrency) ?? 1,
       apiKeys: getResolvedApiKeys(config),
       logger: silentLogger
     });
@@ -291,6 +299,10 @@ server.registerTool(
             'lit-search metadata enrichment completed.',
             '',
             `Result folder: ${result.outputDir}`,
+            `Fields: ${result.pool.metadata.metadataEnrichment.fields.join(', ')}`,
+            `Only missing: ${result.pool.metadata.metadataEnrichment.onlyMissing}`,
+            `Concurrency: ${result.pool.metadata.metadataEnrichment.concurrency}`,
+            `Checkpoint interval: ${result.pool.metadata.metadataEnrichment.checkpointInterval || 'disabled'}`,
             `Complete: ${result.stats.complete}`,
             `Attempted: ${result.stats.attempted}`,
             `Enriched papers: ${result.stats.enrichedPapers}`,

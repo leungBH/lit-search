@@ -100,6 +100,10 @@ Options:
   --retry <mode>           PDF retry mode for "pdf": all|failed|missing (default: all)
   --enrich                 After merge, enrich missing metadata in the merged pool
   --fields <list>          For enrich, comma-separated metadata fields to enrich
+  --only-missing [fields]  For enrich, only fill missing fields, e.g. abstract
+  --checkpoint-interval <n>
+                           For enrich, save progress every n processed papers (default: 5, 0 disables)
+  --concurrency <n>        For enrich, paper-level concurrency (default: 1)
   --overwrite              For enrich, refresh existing metadata too
   -h, --help               Show help
   -v, --version            Show version
@@ -123,6 +127,8 @@ Examples:
   lit-search merge .\\batch1 .\\batch2 -o .\\merged --enrich
   lit-search enrich .\\merged
   lit-search enrich .\\merged --fields abstract,keywords,doi,url,venue
+  lit-search enrich .\\merged --only-missing abstract
+  lit-search enrich .\\merged --only-missing abstract --checkpoint-interval 5
   lit-search resolve .\\citations.txt --output-dir .\\resolved
   lit-search "machine learning" -l 5 --output-dir ./results
   lit-search "AI, coding, agent" --expand pairwise --search-scope title-abstract
@@ -335,13 +341,25 @@ async function runEnrichCommand(args) {
   if (!target) {
     throw new Error('Please provide a pool folder, literature_pool.json, or literature_pool.md path.');
   }
+  const onlyMissing = args.includes('--only-missing');
+  const onlyMissingFields = getOptionValue(args, '--only-missing');
+  const fields = getOptionValue(args, '--fields') || (onlyMissing ? onlyMissingFields : null);
+  const checkpointInterval = getNumberOptionValue(args, '--checkpoint-interval', 5);
+  const concurrency = getNumberOptionValue(args, '--concurrency', 1);
   const result = await enrichMetadata(target, {
     overwrite: args.includes('--overwrite'),
-    fields: getOptionValue(args, '--fields'),
+    onlyMissing,
+    fields,
+    checkpointInterval,
+    concurrency,
     apiKeys: getResolvedApiKeys(config),
     logger: console
   });
   console.log(chalk.green(`Metadata enrichment complete: ${result.outputDir}`));
+  console.log(`Mode:             ${result.pool.metadata.metadataEnrichment.onlyMissing ? 'only missing' : 'missing unless --overwrite'}`);
+  console.log(`Fields:           ${result.pool.metadata.metadataEnrichment.fields.join(', ')}`);
+  console.log(`Concurrency:      ${result.pool.metadata.metadataEnrichment.concurrency}`);
+  console.log(`Checkpoint every: ${result.pool.metadata.metadataEnrichment.checkpointInterval || 'disabled'}`);
   console.log(`Complete:         ${result.stats.complete}`);
   console.log(`Attempted:        ${result.stats.attempted}`);
   console.log(`Enriched papers:  ${result.stats.enrichedPapers}`);
@@ -384,7 +402,16 @@ function expandInputPattern(pattern) {
 
 function getOptionValue(args, name) {
   const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : null;
+  if (index < 0) return null;
+  const value = args[index + 1];
+  return value && !value.startsWith('-') ? value : null;
+}
+
+function getNumberOptionValue(args, name, fallback) {
+  const value = getOptionValue(args, name);
+  if (value === null) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 async function runInit() {

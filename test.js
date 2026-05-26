@@ -103,6 +103,9 @@ function testCliHelp() {
   assert.match(output, /pdf_status\.md/);
   assert.match(output, /lit-search enrich/);
   assert.match(output, /--enrich/);
+  assert.match(output, /--only-missing/);
+  assert.match(output, /--checkpoint-interval/);
+  assert.match(output, /--concurrency/);
   assert.doesNotMatch(output, /--format/);
 }
 
@@ -245,6 +248,48 @@ async function testMetadataEnrichment() {
   assert.equal(pool.papers[0].abstract_status, 'enriched');
   assert.equal(pool.papers[0].abstract_source, 'openalex.doi');
   assert.equal(pool.papers[0].metadata_enrichment.resolved_fields.abstract, 'openalex.doi');
+
+  let checkpoints = 0;
+  const checkpointPool = {
+    metadata: { query: 'checkpoint fixture' },
+    papers: [
+      {
+        seq_id: 1,
+        title: 'Existing Abstract Paper',
+        abstract: 'Already present.'
+      },
+      {
+        seq_id: 2,
+        title: 'Missing Abstract Paper',
+        doi: '10.1000/checkpoint',
+        abstract: null
+      }
+    ]
+  };
+  const checkpointResult = await enrichMetadataInPool(checkpointPool, {
+    fields: 'abstract',
+    onlyMissing: true,
+    concurrency: 2,
+    checkpointInterval: 1,
+    onCheckpoint: async () => {
+      checkpoints++;
+    },
+    resolvers: {
+      openalexByDoi: async () => ({
+        abstract: 'Recovered checkpoint abstract.'
+      })
+    }
+  });
+
+  assert.equal(checkpointResult.stats.complete, 1);
+  assert.equal(checkpointResult.stats.attempted, 1);
+  assert.equal(checkpointResult.stats.enrichedPapers, 1);
+  assert.ok(checkpoints >= 2);
+  assert.equal(checkpointPool.papers[0].abstract, 'Already present.');
+  assert.equal(checkpointPool.papers[1].abstract, 'Recovered checkpoint abstract.');
+  assert.equal(checkpointPool.metadata.metadataEnrichment.onlyMissing, true);
+  assert.equal(checkpointPool.metadata.metadataEnrichment.concurrency, 2);
+  assert.equal(checkpointPool.metadata.metadataEnrichment.checkpointInterval, 1);
 }
 
 function testQueryExpansion() {
@@ -293,6 +338,9 @@ async function testMcpHandshake(env) {
   assert.ok(tools.find(tool => tool.name === 'download_pdfs').inputSchema.properties.retry);
   assert.ok(tools.find(tool => tool.name === 'merge_pools').inputSchema.properties.outputDir);
   assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.poolPath);
+  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.onlyMissing);
+  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.checkpointInterval);
+  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.concurrency);
 }
 
 async function testMcpPoolWorkflowTools(env) {
@@ -340,7 +388,7 @@ async function testMcpPoolWorkflowTools(env) {
       { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pool_status', arguments: { poolPath } } },
       { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'download_pdfs', arguments: { poolPath, retry: 'missing' } } },
       { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } },
-      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'enrich_metadata', arguments: { poolPath } } }
+      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'enrich_metadata', arguments: { poolPath, fields: 'abstract', onlyMissing: true, checkpointInterval: 0, concurrency: 1 } } }
     ], env);
 
     const byId = new Map(responses.map(response => [response.id, response]));

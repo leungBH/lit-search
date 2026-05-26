@@ -1,6 +1,6 @@
 {
   "name": "lit-search",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "学术文献检索 CLI / MCP 服务，检索 Semantic Scholar、OpenAlex、arXiv、CrossRef、CORE，并输出 Markdown、BibTeX 和 PDF",
   "keywords": [
     "literature",
@@ -19,8 +19,8 @@
   "type": "module",
   "main": "lib/index.js",
   "bin": {
-    "lit-search": "./bin/lit-search.js",
-    "lit-search-mcp": "./bin/lit-search-mcp.js"
+    "lit-search": "bin/lit-search.js",
+    "lit-search-mcp": "bin/lit-search-mcp.js"
   },
   "files": [
     "bin/",

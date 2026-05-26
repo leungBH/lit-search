@@ -94,7 +94,7 @@ For follow-up workflows, use the MCP tools that mirror the CLI:
 - `download_pdfs`: download or retry PDFs from an existing pool path.
 - `pool_status`: summarize paper count and PDF status for a pool.
 - `merge_pools`: merge multiple pool paths into one deduplicated pool.
-- `enrich_metadata`: enrich missing metadata in an existing pool and rewrite the pool files.
+- `enrich_metadata`: enrich missing metadata in an existing pool and rewrite the pool files. If only abstracts are needed, use `fields: "abstract"`, `onlyMissing: true`, `checkpointInterval: 5`, and `concurrency: 1`.
 - `resolve_citations`: resolve copied reference entries from a text file into a pool.
 
 ## CLI Fallback
@@ -143,6 +143,8 @@ Enrich missing metadata later:
 
 ```bash
 lit-search enrich ./merged
+lit-search enrich ./merged --only-missing abstract
+lit-search enrich ./merged --only-missing abstract --checkpoint-interval 5
 ```
 
 Useful options:
@@ -159,6 +161,10 @@ Useful options:
 --retry <mode>           PDF retry mode for pdf: all|failed|missing
 --enrich                 enrich missing metadata after merge
 --fields <list>          comma-separated fields for enrich, e.g. abstract,keywords,doi,url,venue
+--only-missing [fields]  only fill missing requested fields during enrich, e.g. abstract
+--checkpoint-interval <n>
+                         save enrich progress every n processed papers; default 5, 0 disables
+--concurrency <n>        paper-level enrich concurrency; default 1
 --overwrite              refresh existing metadata during enrich
 ```
 
@@ -184,6 +190,8 @@ Use `pdf_status.md` for PDF download state and suggested next actions.
 Use `pdfs/` for successfully downloaded PDFs. Not every paper has an accessible direct PDF.
 
 When reporting results to the user, mention the output folder and the literature_pool/BibTeX/PDF-status paths. If PDFs failed or were not attempted, summarize the reasons from `pdf_status.md` or `structuredContent.pdfSummary`.
+
+Do not run multiple `enrich_metadata` calls in parallel against the same pool. Re-running the same enrich command is safe because present fields are skipped unless `overwrite` is enabled.
 
 ## PDF Safety
 

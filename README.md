@@ -93,6 +93,8 @@ lit-search status .\lit_search_20260518_153020
 lit-search merge .\batch1 .\batch2 -o .\merged
 lit-search merge .\batch1 .\batch2 -o .\merged --enrich
 lit-search enrich .\merged
+lit-search enrich .\merged --only-missing abstract
+lit-search enrich .\merged --only-missing abstract --checkpoint-interval 5
 lit-search resolve .\citations.txt --output-dir .\resolved
 lit-search "AI, coding, agent" --expand pairwise
 lit-search "computer vision" --search-scope title-only
@@ -123,6 +125,10 @@ Options:
   --retry <mode>           pdf 子命令的重试范围：all|failed|missing，默认 all
   --enrich                 merge 后立即补全缺失元数据
   --fields <list>          enrich 时指定字段，例如 abstract,keywords,doi,url,venue
+  --only-missing [fields]  enrich 时只补缺失字段，例如 abstract
+  --checkpoint-interval <n>
+                           enrich 时每处理 n 篇写回一次，默认 5，0 表示关闭
+  --concurrency <n>        enrich 的论文级并发数，默认 1
   --overwrite              enrich 时也刷新已有元数据
   -h, --help               显示帮助
   -v, --version            显示版本
@@ -205,6 +211,14 @@ lit_search_20260518_153020/
 - `metadata_status`：按字段记录 `present` / `enriched` / `missing` / `lookup_failed`
 - `metadata_enrichment`：记录尝试过的 resolver、命中的 resolver、缺失字段和原因
 - `abstract_status` / `abstract_source`：摘要字段的便捷状态，便于在 Markdown 中阅读
+
+如果只是补摘要，推荐使用：
+
+```powershell
+lit-search enrich .\lit_search_20260518_153020 --only-missing abstract
+```
+
+`enrich` 默认不会覆盖已有字段；`--only-missing abstract` 会把范围进一步限制为“只补缺失摘要”。大文献池建议保留默认 `--checkpoint-interval 5`，命令中断后再次运行即可跳过已补全的论文。`--concurrency` 默认是 1，除非明确接受上游 API 限流风险，否则不建议调高。
 
 `results.md` 目前作为兼容别名继续生成，内容与 `literature_pool.md` 一致。
 
@@ -371,6 +385,20 @@ MCP 和 CLI 使用同一套底层 workflow。`search_literature` 调用后会创
 | `merge_pools` | `lit-search merge` | 合并多批文献池并去重 |
 | `enrich_metadata` | `lit-search enrich` | 对缺元数据文献按 DOI、arXiv ID、Semantic Scholar ID、OpenAlex ID、标题二次补全缺失字段，例如摘要、关键词、出版物、DOI、URL、卷期页等 |
 | `resolve_citations` | `lit-search resolve` | 从参考文献条目反查具体文献 |
+
+智能体只需要补摘要时，优先调用 `enrich_metadata` 并传入：
+
+```json
+{
+  "poolPath": "D:/path/to/lit_search_20260518_153020",
+  "fields": "abstract",
+  "onlyMissing": true,
+  "checkpointInterval": 5,
+  "concurrency": 1
+}
+```
+
+不要对同一个文献池并发调用多个 `enrich_metadata`。
 
 Agent 调用后应优先查看：
 
