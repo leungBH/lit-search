@@ -18,7 +18,7 @@
 - **文献池输出**：每次检索自动生成 `literature_pool.md`、`literature_pool.json`、`references.bib`、`pdf_status.md` 和 `pdfs/`。
 - **BibTeX 导出**：可导入 Zotero、EndNote、Mendeley 或 LaTeX 工作流。
 - **分阶段 PDF 下载**：默认不下载 PDF；显式执行 `lit-search pdf` 或 `--pdf` 后才下载，并记录下载成功、无 PDF、登录墙、人机核验、非 PDF 页面、限流等情况。
-- **文献池管理**：支持 `status`、`merge` 和 `resolve`，可统计 PDF 状态、合并多批检索结果、从参考文献条目反查文献。
+- **文献池管理**：支持 `status`、`merge`、`resolve` 和 `enrich`，可统计 PDF 状态、合并多批检索结果、从参考文献条目反查文献、为缺元数据论文二次补全元数据。
 - **MCP 服务**：可接入 Trae 等支持 MCP 的 AI 编程工具。
 - **Skills 支持**：内置面向智能体的 `lit-search` Skill，帮助 Codex 等客户端正确拆分关键词、调用 MCP/CLI 并读取输出文件。
 - **跨平台**：支持 Windows、macOS、Linux。
@@ -91,6 +91,8 @@ lit-search "AI, coding, agent" --pdf
 lit-search pdf .\lit_search_20260518_153020
 lit-search status .\lit_search_20260518_153020
 lit-search merge .\batch1 .\batch2 -o .\merged
+lit-search merge .\batch1 .\batch2 -o .\merged --enrich
+lit-search enrich .\merged
 lit-search resolve .\citations.txt --output-dir .\resolved
 lit-search "AI, coding, agent" --expand pairwise
 lit-search "computer vision" --search-scope title-only
@@ -105,6 +107,7 @@ lit-search search [query] [options]
 lit-search pdf <pool-folder|literature_pool.json|pdf_status.md> [--retry all|failed|missing]
 lit-search status <pool-folder|literature_pool.json|pdf_status.md>
 lit-search merge <pool...> -o <output-dir>
+lit-search enrich <pool-folder|literature_pool.json|literature_pool.md>
 lit-search resolve <citations.txt> [options]
 lit-search init
 
@@ -118,6 +121,9 @@ Options:
   --pdf                    检索落盘后继续下载 PDF
   --no-pdf                 不下载 PDF，默认行为
   --retry <mode>           pdf 子命令的重试范围：all|failed|missing，默认 all
+  --enrich                 merge 后立即补全缺失元数据
+  --fields <list>          enrich 时指定字段，例如 abstract,keywords,doi,url,venue
+  --overwrite              enrich 时也刷新已有元数据
   -h, --help               显示帮助
   -v, --version            显示版本
 ```
@@ -183,6 +189,7 @@ lit_search_20260518_153020/
 
 - 标题
 - 摘要
+- 摘要状态和摘要来源
 - 关键词
 - 作者，最多显示前三位
 - 年份
@@ -192,6 +199,12 @@ lit_search_20260518_153020/
 - URL
 - PDF 候选链接池
 - 备注，展示 PDF 是否已下载、未尝试或失败原因
+
+元数据补全后会写入：
+
+- `metadata_status`：按字段记录 `present` / `enriched` / `missing` / `lookup_failed`
+- `metadata_enrichment`：记录尝试过的 resolver、命中的 resolver、缺失字段和原因
+- `abstract_status` / `abstract_source`：摘要字段的便捷状态，便于在 Markdown 中阅读
 
 `results.md` 目前作为兼容别名继续生成，内容与 `literature_pool.md` 一致。
 
@@ -330,6 +343,7 @@ search_literature
 download_pdfs
 pool_status
 merge_pools
+enrich_metadata
 resolve_citations
 ```
 
@@ -355,6 +369,7 @@ MCP 和 CLI 使用同一套底层 workflow。`search_literature` 调用后会创
 | `download_pdfs` | `lit-search pdf` | 基于已有文献池下载或重试下载 PDF |
 | `pool_status` | `lit-search status` | 统计文献数量和 PDF 状态 |
 | `merge_pools` | `lit-search merge` | 合并多批文献池并去重 |
+| `enrich_metadata` | `lit-search enrich` | 对缺元数据文献按 DOI、arXiv ID、Semantic Scholar ID、OpenAlex ID、标题二次补全缺失字段，例如摘要、关键词、出版物、DOI、URL、卷期页等 |
 | `resolve_citations` | `lit-search resolve` | 从参考文献条目反查具体文献 |
 
 Agent 调用后应优先查看：
@@ -406,7 +421,7 @@ C:\Users\<你的用户名>\.codex\skills\lit-search
 帮我检索 ontology, knowledge graph, semantic web 相关论文，2020 年以后，每个关键词每个数据源 5 篇，保存文献池和 BibTeX；如果我明确要求全文，再下载 PDF。
 ```
 
-Skill 会引导智能体优先调用 MCP 的 `search_literature`，需要后续处理时再调用 `download_pdfs`、`pool_status`、`merge_pools` 或 `resolve_citations`，并在结果生成后查看：
+Skill 会引导智能体优先调用 MCP 的 `search_literature`，需要后续处理时再调用 `download_pdfs`、`pool_status`、`merge_pools`、`enrich_metadata` 或 `resolve_citations`，并在结果生成后查看：
 
 - `literature_pool.md`
 - `literature_pool.json`

@@ -1,4 +1,4 @@
----
+﻿---
 name: lit-search
 description: Use this skill whenever the user asks to search academic papers, collect references, support a literature review, generate BibTeX, find scholarly PDFs, or retrieve paper metadata. Prefer lit-search over generic web search for academic literature workflows, especially when the user mentions papers, publications, citations, DOI, BibTeX, Zotero, EndNote, Mendeley, arXiv, Semantic Scholar, OpenAlex, CrossRef, or CORE.
 ---
@@ -17,6 +17,7 @@ Use this skill when the user asks to:
 - download paper PDFs or inspect PDF availability
 - resolve known citation strings into complete paper metadata
 - merge multiple literature search batches
+- enrich missing metadata in an existing literature pool
 - collect scholarly metadata such as DOI, abstract, authors, venue, year, keywords, or citation details
 
 Do not use lit-search as a general web search tool for non-academic pages, news, products, or tutorials.
@@ -93,6 +94,7 @@ For follow-up workflows, use the MCP tools that mirror the CLI:
 - `download_pdfs`: download or retry PDFs from an existing pool path.
 - `pool_status`: summarize paper count and PDF status for a pool.
 - `merge_pools`: merge multiple pool paths into one deduplicated pool.
+- `enrich_metadata`: enrich missing metadata in an existing pool and rewrite the pool files.
 - `resolve_citations`: resolve copied reference entries from a text file into a pool.
 
 ## CLI Fallback
@@ -134,6 +136,13 @@ Merge batches:
 
 ```bash
 lit-search merge ./batch1 ./batch2 -o ./merged
+lit-search merge ./batch1 ./batch2 -o ./merged --enrich
+```
+
+Enrich missing metadata later:
+
+```bash
+lit-search enrich ./merged
 ```
 
 Useful options:
@@ -148,6 +157,9 @@ Useful options:
 --pdf                    download PDFs after writing literature pool files
 --no-pdf                 do not download PDFs (default)
 --retry <mode>           PDF retry mode for pdf: all|failed|missing
+--enrich                 enrich missing metadata after merge
+--fields <list>          comma-separated fields for enrich, e.g. abstract,keywords,doi,url,venue
+--overwrite              refresh existing metadata during enrich
 ```
 
 ## Output Handling
@@ -163,7 +175,7 @@ search_meta.json
 pdfs/
 ```
 
-Use `literature_pool.md` for readable paper summaries. It includes title, abstract, keywords, first authors, year, venue, source, DOI, URL, ranked `pdf_candidates[]`, and notes.
+Use `literature_pool.md` for readable paper summaries. It includes title, abstract, metadata status for enriched fields, keywords, first authors, year, venue, source, DOI, URL, ranked `pdf_candidates[]`, and notes.
 
 Use `references.bib` for citation import into Zotero, EndNote, Mendeley, or LaTeX.
 

@@ -8,7 +8,7 @@ import ora from 'ora';
 import inquirer from 'inquirer';
 import { generateOutputFolderName, readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
 import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
-import { filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
+import { enrichMetadata, filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
 import {
   createAppConfig,
   getResolvedApiKeys,
@@ -81,6 +81,7 @@ Usage:
   lit-search pdf <pool-folder|literature_pool.json|pdf_status.md> [--retry all|failed|missing]
   lit-search status <pool-folder|literature_pool.json|pdf_status.md>
   lit-search merge <pool...> -o <output-dir>
+  lit-search enrich <pool-folder|literature_pool.json|literature_pool.md>
   lit-search resolve <citations.txt> [options]
   lit-search init
 
@@ -97,6 +98,9 @@ Options:
   --pdf                    Download PDFs after writing literature pool files
   --no-pdf                 Do not download PDFs (default)
   --retry <mode>           PDF retry mode for "pdf": all|failed|missing (default: all)
+  --enrich                 After merge, enrich missing metadata in the merged pool
+  --fields <list>          For enrich, comma-separated metadata fields to enrich
+  --overwrite              For enrich, refresh existing metadata too
   -h, --help               Show help
   -v, --version            Show version
 
@@ -116,6 +120,9 @@ Examples:
   lit-search pdf .\\lit_search_20260518_153020\\pdf_status.md --retry failed
   lit-search status .\\lit_search_20260518_153020
   lit-search merge .\\batch1 .\\batch2 -o .\\merged
+  lit-search merge .\\batch1 .\\batch2 -o .\\merged --enrich
+  lit-search enrich .\\merged
+  lit-search enrich .\\merged --fields abstract,keywords,doi,url,venue
   lit-search resolve .\\citations.txt --output-dir .\\resolved
   lit-search "machine learning" -l 5 --output-dir ./results
   lit-search "AI, coding, agent" --expand pairwise --search-scope title-abstract
@@ -168,6 +175,10 @@ async function main() {
   }
   if (command === 'merge') {
     await runMergeCommand(args.slice(1));
+    return;
+  }
+  if (command === 'enrich') {
+    await runEnrichCommand(args.slice(1));
     return;
   }
   if (command === 'resolve') {
@@ -297,15 +308,46 @@ async function runStatusCommand(args) {
 async function runMergeCommand(args) {
   const outputIndex = args.findIndex(arg => arg === '-o' || arg === '--output-dir');
   const outputDir = outputIndex >= 0 ? resolve(args[outputIndex + 1]) : resolve('merged_literature');
-  const inputs = (outputIndex >= 0 ? args.slice(0, outputIndex) : args).flatMap(expandInputPattern);
+  const optionNames = new Set(['--enrich']);
+  const rawInputs = (outputIndex >= 0 ? args.slice(0, outputIndex) : args).filter(arg => !optionNames.has(arg));
+  const inputs = rawInputs.flatMap(expandInputPattern);
   if (!inputs.length) {
     throw new Error('Please provide at least one pool folder or literature_pool.json path.');
   }
   const result = mergePools(inputs, outputDir);
+  if (args.includes('--enrich')) {
+    const enriched = await enrichMetadata(outputDir, {
+      apiKeys: getResolvedApiKeys(config),
+      logger: console
+    });
+    result.pool = enriched.pool;
+    result.files = enriched.files;
+    console.log(chalk.green(`Metadata enrichment: ${enriched.stats.enrichedPapers} papers, ${enriched.stats.enrichedFields} fields enriched, ${enriched.stats.lookupFailed} failed`));
+  }
   console.log(chalk.green(`Merged ${inputs.length} pool(s) into ${outputDir}`));
   console.log(`Papers: ${result.pool.papers.length}`);
   console.log(`Literature pool: ${result.files.literaturePoolFile}`);
   console.log(`BibTeX: ${result.files.bibFile}`);
+}
+
+async function runEnrichCommand(args) {
+  const target = args[0];
+  if (!target) {
+    throw new Error('Please provide a pool folder, literature_pool.json, or literature_pool.md path.');
+  }
+  const result = await enrichMetadata(target, {
+    overwrite: args.includes('--overwrite'),
+    fields: getOptionValue(args, '--fields'),
+    apiKeys: getResolvedApiKeys(config),
+    logger: console
+  });
+  console.log(chalk.green(`Metadata enrichment complete: ${result.outputDir}`));
+  console.log(`Complete:         ${result.stats.complete}`);
+  console.log(`Attempted:        ${result.stats.attempted}`);
+  console.log(`Enriched papers:  ${result.stats.enrichedPapers}`);
+  console.log(`Enriched fields:  ${result.stats.enrichedFields}`);
+  console.log(`Lookup failed:    ${result.stats.lookupFailed}`);
+  console.log(`Literature pool:  ${result.files.literaturePoolFile}`);
 }
 
 async function runResolveCommand(args) {

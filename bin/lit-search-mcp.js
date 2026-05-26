@@ -8,7 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
 import { readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
-import { filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
+import { enrichMetadata, filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
 import { createAppConfig, getResolvedApiKeys } from '../lib/app-config.js';
 import { silentLogger } from '../lib/logger.js';
 
@@ -250,6 +250,69 @@ server.registerTool(
           metaFile: result.files.metaFile,
           pdfDir: join(outputDir, 'pdfs')
         }
+      }
+    };
+  }
+);
+
+server.registerTool(
+  'enrich_metadata',
+  {
+    title: 'Enrich Metadata',
+    description: [
+      'Enrich missing metadata in an existing lit-search literature pool.',
+      'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
+      'This is the MCP equivalent of "lit-search enrich".',
+      'It looks up missing fields by arXiv ID, DOI via OpenAlex and Semantic Scholar, source IDs, then title fallback.',
+      'Fields include abstract, keywords, journal/venue, DOI, URL, volume/issue/pages, publisher, language, work_type, identifiers, and pdf_candidates.',
+      'It rewrites literature_pool.json, literature_pool.md, references.bib, and search_meta.json in place.',
+      'By default it does not overwrite existing metadata.'
+    ].join(' '),
+    inputSchema: {
+      poolPath: z.string().min(1).describe('Path to a lit-search result folder or pool file.'),
+      fields: z.string().optional().describe('Comma-separated fields to enrich. Default: all supported metadata fields.'),
+      overwrite: z.boolean().optional().describe('Whether to refresh existing metadata too. Default false.')
+    }
+  },
+  async args => {
+    logDebug(`tool enrich_metadata args=${JSON.stringify(args)}`);
+    const result = await enrichMetadata(args.poolPath, {
+      overwrite: args.overwrite === true,
+      fields: args.fields,
+      apiKeys: getResolvedApiKeys(config),
+      logger: silentLogger
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: [
+            'lit-search metadata enrichment completed.',
+            '',
+            `Result folder: ${result.outputDir}`,
+            `Complete: ${result.stats.complete}`,
+            `Attempted: ${result.stats.attempted}`,
+            `Enriched papers: ${result.stats.enrichedPapers}`,
+            `Enriched fields: ${result.stats.enrichedFields}`,
+            `Lookup failed: ${result.stats.lookupFailed}`,
+            `Literature pool: ${result.files.literaturePoolFile}`
+          ].join('\n')
+        }
+      ],
+      structuredContent: {
+        ...result.pool,
+        output: {
+          outputDir: result.outputDir,
+          literaturePoolFile: result.files.literaturePoolFile,
+          markdownFile: result.files.markdownFile,
+          bibFile: result.files.bibFile,
+          pdfStatusFile: result.files.pdfStatusFile,
+          poolJsonFile: result.files.poolJsonFile,
+          metaFile: result.files.metaFile,
+          pdfDir: join(result.outputDir, 'pdfs')
+        },
+        metadataSummary: result.stats
       }
     };
   }

@@ -9,6 +9,7 @@ import chalk from 'chalk';
 import { renderOutput } from './lib/output.js';
 import { writeResultFiles } from './lib/output-files.js';
 import { normalizePdfCandidates } from './lib/pdf-candidates.js';
+import { enrichMetadataInPool } from './lib/metadata-enricher.js';
 import { generateQueries } from './lib/search.js';
 
 const cliEntry = resolve(process.cwd(), 'bin/lit-search.js');
@@ -49,6 +50,7 @@ async function main() {
   results.push(await runTest('CLI help', testCliHelp));
   results.push(await runTest('renderers', testRenderers));
   results.push(await runTest('PDF candidate normalization', testPdfCandidateNormalization));
+  results.push(await runTest('metadata enrichment', testMetadataEnrichment));
   results.push(await runTest('query expansion', testQueryExpansion));
   results.push(await runTest('parallel source orchestration', testParallelSourceOrchestration));
   results.push(await runTest('MCP handshake', () => testMcpHandshake(keyEnv)));
@@ -99,6 +101,8 @@ function testCliHelp() {
   assert.match(output, /--pdf/);
   assert.match(output, /--retry/);
   assert.match(output, /pdf_status\.md/);
+  assert.match(output, /lit-search enrich/);
+  assert.match(output, /--enrich/);
   assert.doesNotMatch(output, /--format/);
 }
 
@@ -210,6 +214,39 @@ function testPdfCandidateNormalization() {
   ]);
 }
 
+async function testMetadataEnrichment() {
+  const pool = {
+    metadata: { query: 'fixture' },
+    papers: [
+      {
+        seq_id: 1,
+        title: 'Missing Abstract Paper',
+        doi: '10.1000/missing',
+        abstract: null,
+        pdf_candidates: []
+      }
+    ]
+  };
+  const result = await enrichMetadataInPool(pool, {
+    resolvers: {
+      openalexByDoi: async () => ({
+        abstract: 'Recovered abstract.',
+        keywords: ['recovered'],
+        journal: 'Recovered Journal',
+        pdfCandidates: []
+      })
+    }
+  });
+
+  assert.equal(result.stats.enrichedPapers, 1);
+  assert.ok(result.stats.enrichedFields >= 2);
+  assert.equal(pool.papers[0].abstract, 'Recovered abstract.');
+  assert.equal(pool.papers[0].journal, 'Recovered Journal');
+  assert.equal(pool.papers[0].abstract_status, 'enriched');
+  assert.equal(pool.papers[0].abstract_source, 'openalex.doi');
+  assert.equal(pool.papers[0].metadata_enrichment.resolved_fields.abstract, 'openalex.doi');
+}
+
 function testQueryExpansion() {
   assert.deepEqual(generateQueries('AI, coding, agent', [], 'none'), ['AI', 'coding', 'agent']);
   assert.deepEqual(generateQueries('AI, coding, agent', [], 'pairwise'), [
@@ -246,6 +283,7 @@ async function testMcpHandshake(env) {
     'download_pdfs',
     'pool_status',
     'merge_pools',
+    'enrich_metadata',
     'resolve_citations'
   ]);
   const searchTool = tools.find(tool => tool.name === 'search_literature');
@@ -254,6 +292,7 @@ async function testMcpHandshake(env) {
   assert.ok(searchTool.inputSchema.properties.downloadPdf);
   assert.ok(tools.find(tool => tool.name === 'download_pdfs').inputSchema.properties.retry);
   assert.ok(tools.find(tool => tool.name === 'merge_pools').inputSchema.properties.outputDir);
+  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.poolPath);
 }
 
 async function testMcpPoolWorkflowTools(env) {
@@ -284,6 +323,7 @@ async function testMcpPoolWorkflowTools(env) {
         journal: 'Fixture Journal',
         doi: '10.1000/fixture',
         url: 'https://doi.org/10.1000/fixture',
+        abstract: 'Fixture abstract.',
         pdf_candidates: [],
         source: 'fixture'
       }
@@ -299,13 +339,15 @@ async function testMcpPoolWorkflowTools(env) {
       { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
       { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pool_status', arguments: { poolPath } } },
       { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'download_pdfs', arguments: { poolPath, retry: 'missing' } } },
-      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } }
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } },
+      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'enrich_metadata', arguments: { poolPath } } }
     ], env);
 
     const byId = new Map(responses.map(response => [response.id, response]));
     assert.equal(byId.get(2).result.structuredContent.summary.papers, 1);
     assert.equal(byId.get(3).result.structuredContent.pdfSummary.skipped, 1);
     assert.equal(byId.get(4).result.structuredContent.papers.length, 1);
+    assert.ok(byId.get(5).result.structuredContent.metadataSummary);
     assert.ok(existsSync(join(mergedDir, 'literature_pool.md')));
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
