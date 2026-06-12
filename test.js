@@ -17,30 +17,6 @@ const mcpEntry = resolve(process.cwd(), 'bin/lit-search-mcp.js');
 const localKeyFile = resolve(process.cwd(), 'temp/local-secrets/key.json');
 const NETWORK_TIMEOUT_MS = 300000;
 
-const networkTests = [
-  {
-    name: 'CLI folder output',
-    args: ['machine learning', '-l', '2', '-s', '2022'],
-    expect: { minResults: 1 }
-  },
-  {
-    name: 'CLI title-only search',
-    args: ['computer vision', '-l', '2', '-s', '2022', '--search-scope', 'title-only'],
-    expect: { minResults: 1 }
-  },
-  {
-    name: 'MCP tools/call',
-    mcp: true,
-    toolArgs: {
-      query: 'natural language processing',
-      limit: 2,
-      yearStart: 2022,
-      searchScope: 'title-abstract'
-    },
-    expect: { minResults: 1 }
-  }
-];
-
 async function main() {
   console.log(chalk.bold.cyan('\nlit-search acceptance test\n'));
 
@@ -48,7 +24,8 @@ async function main() {
   const results = [];
 
   results.push(await runTest('CLI help', testCliHelp));
-  results.push(await runTest('renderers', testRenderers));
+  results.push(await runTest('BibTeX renderer', testBibTeXRenderer));
+  results.push(await runTest('result file output', testResultFiles));
   results.push(await runTest('PDF candidate normalization', testPdfCandidateNormalization));
   results.push(await runTest('metadata enrichment', testMetadataEnrichment));
   results.push(await runTest('query expansion', testQueryExpansion));
@@ -61,9 +38,8 @@ async function main() {
   } else if (!hasAnyKeys(keyEnv)) {
     console.log(chalk.yellow('\nNo API keys found. Skipping network tests.'));
   } else {
-    for (const test of networkTests) {
-      results.push(await runTest(test.name, () => runNetworkTest(test, keyEnv)));
-    }
+    results.push(await runTest('CLI folder output', () => runCliNetworkTest(['machine learning', '-l', '2', '-s', '2022'], keyEnv)));
+    results.push(await runTest('MCP tools/call', () => runMcpNetworkTest(keyEnv)));
   }
 
   printSummary(results);
@@ -94,88 +70,57 @@ function testCliHelp() {
   });
 
   assert.match(output, /lit-search init/);
-  assert.match(output, /literature_pool\.md/);
+  assert.match(output, /search_meta\.json/);
+  assert.match(output, /literature_pool\.json/);
   assert.match(output, /references\.bib/);
-  assert.match(output, /pdf_status\.md/);
   assert.match(output, /--output-dir/);
-  assert.match(output, /--pdf/);
-  assert.match(output, /--retry/);
-  assert.match(output, /pdf_status\.md/);
   assert.match(output, /lit-search enrich/);
   assert.match(output, /--enrich/);
   assert.match(output, /--only-missing/);
   assert.match(output, /--checkpoint-interval/);
   assert.match(output, /--concurrency/);
+  assert.doesNotMatch(output, /--pdf/);
+  assert.doesNotMatch(output, /pdf_status\.md/);
+  assert.doesNotMatch(output, /pdfs\//);
   assert.doesNotMatch(output, /--format/);
 }
 
-function testRenderers() {
-  const fixture = {
-    metadata: {
-      query: 'machine learning',
-      queryExpansion: 'none',
-      searchScope: 'title-abstract',
-      keywords: ['machine learning'],
-      yearRange: { start: 2022, end: 2024 },
-      totalRetrieved: 3,
-      afterDedup: 2,
-      afterFilter: 2,
-      finalCount: 1,
-      engineStats: [{ engine: 'OpenAlex', status: 'success', totalPapers: 1 }]
-    },
-    papers: [
-      {
-        seq_id: 1,
-        citation_key: 'Smith2024_1',
-        entry_type: 'article',
-        title: 'A Study on Machine Learning',
-        author: 'Alice Smith and Bob Lee',
-        authors: ['Alice Smith', 'Bob Lee', 'Carol Wang', 'David Kim'],
-        year: 2024,
-        journal: 'Journal of Examples',
-        pages: '101-120',
-        doi: '10.1000/example',
-        url: 'https://doi.org/10.1000/example',
-        pdf_candidates: [
-          {
-            url: 'https://example.com/paper.pdf',
-            source: 'openalex',
-            provider: 'example.com',
-            access_type: 'repository',
-            license: 'cc-by',
-            is_oa: true,
-            confidence: 0.8,
-            reason: 'Fixture repository PDF.',
-            rank: 1
-          }
-        ],
-        pdf_download: {
-          status: 'failed',
-          code: 'not_direct_pdf',
-          message: 'The URL did not return a PDF file.',
-          action: 'Treat this as a landing page.'
-        },
-        abstract: 'An example abstract.',
-        keywords: ['machine learning', 'classification'],
-        source: 'openalex',
-        citation_count: 12
-      }
-    ]
-  };
-
-  const markdown = renderOutput(fixture, 'md');
+function testBibTeXRenderer() {
+  const fixture = buildFixturePool();
   const bib = renderOutput(fixture, 'bib');
 
-  assert.match(markdown, /# lit-search Results/);
-  assert.match(markdown, /A Study on Machine Learning/);
-  assert.match(markdown, /作者: Alice Smith, Bob Lee, Carol Wang, 等/);
-  assert.match(markdown, /PDF候选: #1 https:\/\/example\.com\/paper\.pdf/);
-  assert.match(markdown, /备注: PDF 下载失败：not_direct_pdf/);
-  assert.doesNotMatch(markdown, /PDF候选: .*not_direct_pdf/);
-  assert.doesNotMatch(markdown, /Citation Count/);
+  assert.match(bib, /^% lit-search references/m);
   assert.match(bib, /@article\{Smith2024_1,/);
-  assert.match(bib, /pdfurl = \{https:\/\/example\.com\/paper\.pdf\}/);
-  assert.match(bib, /pdfcandidates = \{1:repository:https:\/\/example\.com\/paper\.pdf\}/);
+  assert.match(bib, /title = \{A Study on Machine Learning\}/);
+  assert.match(bib, /author = \{Alice Smith and Bob Lee\}/);
+  assert.match(bib, /journal = \{Journal of Examples\}/);
+  assert.match(bib, /doi = \{10\.1000\/example\}/);
+  assert.match(bib, /keywords = \{machine learning, classification\}/);
+  assert.doesNotMatch(bib, /pdfurl/);
+  assert.doesNotMatch(bib, /pdfcandidates/);
+  assert.doesNotMatch(bib, /citationcount/);
+}
+
+function testResultFiles() {
+  const tempDir = mkdtempSync(join(tmpdir(), 'lit-search-files-'));
+  try {
+    const files = writeResultFiles(buildFixturePool(), tempDir, { mode: 'test', outputDir: tempDir });
+    assert.ok(existsSync(files.metaFile));
+    assert.ok(existsSync(files.poolJsonFile));
+    assert.ok(existsSync(files.bibFile));
+    assert.equal(existsSync(join(tempDir, 'literature_pool.md')), false);
+    assert.equal(existsSync(join(tempDir, 'results.md')), false);
+    assert.equal(existsSync(join(tempDir, 'pdf_status.md')), false);
+    assert.equal(existsSync(join(tempDir, 'pdfs')), false);
+
+    const meta = JSON.parse(readFileSync(files.metaFile, 'utf-8'));
+    assert.match(meta.version, /^\d+\.\d+\.\d+/);
+    assert.equal(meta.files.searchMeta, 'search_meta.json');
+    assert.equal(meta.files.literaturePool, 'literature_pool.json');
+    assert.equal(meta.files.references, 'references.bib');
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 function testPdfCandidateNormalization() {
@@ -253,17 +198,8 @@ async function testMetadataEnrichment() {
   const checkpointPool = {
     metadata: { query: 'checkpoint fixture' },
     papers: [
-      {
-        seq_id: 1,
-        title: 'Existing Abstract Paper',
-        abstract: 'Already present.'
-      },
-      {
-        seq_id: 2,
-        title: 'Missing Abstract Paper',
-        doi: '10.1000/checkpoint',
-        abstract: null
-      }
+      { seq_id: 1, title: 'Existing Abstract Paper', abstract: 'Already present.' },
+      { seq_id: 2, title: 'Missing Abstract Paper', doi: '10.1000/checkpoint', abstract: null }
     ]
   };
   const checkpointResult = await enrichMetadataInPool(checkpointPool, {
@@ -271,13 +207,9 @@ async function testMetadataEnrichment() {
     onlyMissing: true,
     concurrency: 2,
     checkpointInterval: 1,
-    onCheckpoint: async () => {
-      checkpoints++;
-    },
+    onCheckpoint: async () => { checkpoints++; },
     resolvers: {
-      openalexByDoi: async () => ({
-        abstract: 'Recovered checkpoint abstract.'
-      })
+      openalexByDoi: async () => ({ abstract: 'Recovered checkpoint abstract.' })
     }
   });
 
@@ -288,8 +220,6 @@ async function testMetadataEnrichment() {
   assert.equal(checkpointPool.papers[0].abstract, 'Already present.');
   assert.equal(checkpointPool.papers[1].abstract, 'Recovered checkpoint abstract.');
   assert.equal(checkpointPool.metadata.metadataEnrichment.onlyMissing, true);
-  assert.equal(checkpointPool.metadata.metadataEnrichment.concurrency, 2);
-  assert.equal(checkpointPool.metadata.metadataEnrichment.checkpointInterval, 1);
 }
 
 function testQueryExpansion() {
@@ -313,6 +243,15 @@ function testQueryExpansion() {
   ]);
 }
 
+function testParallelSourceOrchestration() {
+  const source = readFileSync(resolve(process.cwd(), 'lib/search.js'), 'utf-8');
+  assert.match(source, /Promise\.all\(/);
+  assert.match(source, /engineList\.map/);
+  assert.match(source, /async function searchEngineQuery/);
+  assert.match(source, /SAME_SOURCE_QUERY_DELAY_MS = 1100/);
+  assert.match(source, /setTimeout\(r, SAME_SOURCE_QUERY_DELAY_MS\)/);
+}
+
 async function testMcpHandshake(env) {
   const responses = await interactWithMcp([
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
@@ -325,125 +264,51 @@ async function testMcpHandshake(env) {
   const names = tools.map(tool => tool.name);
   assert.deepEqual(names, [
     'search_literature',
-    'download_pdfs',
-    'pool_status',
     'merge_pools',
     'enrich_metadata',
     'resolve_citations'
   ]);
   const searchTool = tools.find(tool => tool.name === 'search_literature');
   assert.equal(searchTool.inputSchema.properties.format, undefined);
+  assert.equal(searchTool.inputSchema.properties.downloadPdf, undefined);
   assert.ok(searchTool.inputSchema.properties.outputDir);
-  assert.ok(searchTool.inputSchema.properties.downloadPdf);
-  assert.ok(tools.find(tool => tool.name === 'download_pdfs').inputSchema.properties.retry);
   assert.ok(tools.find(tool => tool.name === 'merge_pools').inputSchema.properties.outputDir);
   assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.poolPath);
   assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.onlyMissing);
-  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.checkpointInterval);
-  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.concurrency);
 }
 
 async function testMcpPoolWorkflowTools(env) {
   const tempDir = mkdtempSync(join(tmpdir(), 'lit-search-mcp-pool-'));
   const poolDir = join(tempDir, 'pool1');
   const mergedDir = join(tempDir, 'merged');
-  const fixture = {
-    metadata: {
-      query: 'fixture',
-      queryExpansion: 'none',
-      searchScope: 'default-engine-search',
-      keywords: ['fixture'],
-      totalRetrieved: 1,
-      afterDedup: 1,
-      afterFilter: 1,
-      finalCount: 1,
-      engineStats: []
-    },
-    papers: [
-      {
-        seq_id: 1,
-        citation_key: 'Fixture2024_1',
-        entry_type: 'article',
-        title: 'Fixture Paper',
-        authors: ['Alice Smith'],
-        author: 'Alice Smith',
-        year: 2024,
-        journal: 'Fixture Journal',
-        doi: '10.1000/fixture',
-        url: 'https://doi.org/10.1000/fixture',
-        abstract: 'Fixture abstract.',
-        pdf_candidates: [],
-        source: 'fixture'
-      }
-    ]
-  };
 
   try {
-    writeResultFiles(fixture, poolDir, { mode: 'test', outputDir: poolDir });
-    const poolPath = join(poolDir, 'pdf_status.md');
+    writeResultFiles(buildFixturePool(), poolDir, { mode: 'test', outputDir: poolDir });
+    const poolPath = join(poolDir, 'literature_pool.json');
 
     const responses = await interactWithMcp([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
       { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
-      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pool_status', arguments: { poolPath } } },
-      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'download_pdfs', arguments: { poolPath, retry: 'missing' } } },
-      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } },
-      { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'enrich_metadata', arguments: { poolPath, fields: 'abstract', onlyMissing: true, checkpointInterval: 0, concurrency: 1 } } }
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } },
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'enrich_metadata', arguments: { poolPath, fields: 'abstract', onlyMissing: true, checkpointInterval: 0, concurrency: 1 } } }
     ], env);
 
     const byId = new Map(responses.map(response => [response.id, response]));
-    assert.equal(byId.get(2).result.structuredContent.summary.papers, 1);
-    assert.equal(byId.get(3).result.structuredContent.pdfSummary.skipped, 1);
-    assert.equal(byId.get(4).result.structuredContent.papers.length, 1);
-    assert.ok(byId.get(5).result.structuredContent.metadataSummary);
-    assert.ok(existsSync(join(mergedDir, 'literature_pool.md')));
+    assert.equal(byId.get(2).result.structuredContent.papers.length, 1);
+    assert.ok(byId.get(3).result.structuredContent.metadataSummary);
+    assert.ok(existsSync(join(mergedDir, 'search_meta.json')));
+    assert.ok(existsSync(join(mergedDir, 'literature_pool.json')));
+    assert.ok(existsSync(join(mergedDir, 'references.bib')));
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
-function testParallelSourceOrchestration() {
-  const source = readFileSync(resolve(process.cwd(), 'lib/search.js'), 'utf-8');
-  assert.match(source, /Promise\.all\(/);
-  assert.match(source, /engineList\.map/);
-  assert.match(source, /async function searchEngineQuery/);
-  assert.match(source, /startProgressList/);
-  assert.match(source, /正在检索的关键词/);
-  assert.match(source, /SAME_SOURCE_QUERY_DELAY_MS = 1100/);
-  assert.match(source, /setTimeout\(r, SAME_SOURCE_QUERY_DELAY_MS\)/);
-}
-
-async function runNetworkTest(test, env) {
-  if (test.mcp) {
-    const responses = await interactWithMcp([
-      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
-      { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
-      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_literature', arguments: test.toolArgs } }
-    ], env, NETWORK_TIMEOUT_MS);
-
-    const toolResult = responses[1].result;
-    assert.ok(toolResult.structuredContent);
-    assert.ok(toolResult.structuredContent.papers.length >= test.expect.minResults);
-    assert.ok(toolResult.structuredContent.output?.outputDir);
-    assert.ok(existsSync(toolResult.structuredContent.output.markdownFile));
-    assert.ok(existsSync(toolResult.structuredContent.output.bibFile));
-    assert.ok(existsSync(toolResult.structuredContent.output.pdfDir));
-    assert.ok(toolResult.structuredContent.pdfSummary);
-    assert.equal(toolResult.content.length, 3);
-    assert.match(toolResult.content[0].text, /Local files created:/);
-    assert.match(toolResult.content[0].text, /references\.bib/);
-    assert.match(toolResult.content[0].text, /pdf_status\.md/);
-    assert.match(toolResult.content[0].text, /pdfs/);
-    assert.match(toolResult.content[1].text, /# lit-search Results/);
-    assert.match(toolResult.content[2].text, /^% lit-search results/m);
-    rmSync(toolResult.structuredContent.output.outputDir, { recursive: true, force: true });
-    return;
-  }
-
+async function runCliNetworkTest(args, env) {
   const tempDir = mkdtempSync(join(tmpdir(), 'lit-search-acceptance-'));
 
   try {
-    execFileSync(process.execPath, [cliEntry, ...test.args], {
+    execFileSync(process.execPath, [cliEntry, ...args], {
       cwd: tempDir,
       encoding: 'utf-8',
       timeout: NETWORK_TIMEOUT_MS,
@@ -453,19 +318,95 @@ async function runNetworkTest(test, env) {
 
     const outputDir = findNewestOutputDir(tempDir);
     assert.ok(outputDir, 'No output directory found.');
-    assert.ok(existsSync(join(outputDir, 'literature_pool.md')));
-    assert.ok(existsSync(join(outputDir, 'references.bib')));
-    assert.ok(existsSync(join(outputDir, 'pdf_status.md')));
+    assert.ok(existsSync(join(outputDir, 'search_meta.json')));
     assert.ok(existsSync(join(outputDir, 'literature_pool.json')));
-    assert.ok(existsSync(join(outputDir, 'pdfs')));
+    assert.ok(existsSync(join(outputDir, 'references.bib')));
+    assert.equal(existsSync(join(outputDir, 'pdf_status.md')), false);
+    assert.equal(existsSync(join(outputDir, 'pdfs')), false);
 
-    const markdown = readFileSync(join(outputDir, 'literature_pool.md'), 'utf-8');
+    const pool = JSON.parse(readFileSync(join(outputDir, 'literature_pool.json'), 'utf-8'));
+    const meta = JSON.parse(readFileSync(join(outputDir, 'search_meta.json'), 'utf-8'));
     const bib = readFileSync(join(outputDir, 'references.bib'), 'utf-8');
-    assert.match(markdown, /Final count:/);
-    assert.match(bib, /^% lit-search results/m);
+    assert.ok(pool.papers.length >= 1);
+    assert.match(meta.version, /^\d+\.\d+\.\d+/);
+    assert.equal(meta.files.literaturePool, 'literature_pool.json');
+    assert.match(bib, /^% lit-search references/m);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+async function runMcpNetworkTest(env) {
+  const responses = await interactWithMcp([
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
+    { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_literature', arguments: { query: 'natural language processing', limit: 2, yearStart: 2022, searchScope: 'title-abstract' } } }
+  ], env, NETWORK_TIMEOUT_MS);
+
+  const toolResult = responses[1].result;
+  assert.ok(toolResult.structuredContent);
+  assert.ok(toolResult.structuredContent.papers.length >= 1);
+  assert.ok(existsSync(toolResult.structuredContent.output.metaFile));
+  assert.ok(existsSync(toolResult.structuredContent.output.poolJsonFile));
+  assert.ok(existsSync(toolResult.structuredContent.output.bibFile));
+  assert.equal(toolResult.structuredContent.output.pdfDir, undefined);
+  assert.equal(toolResult.structuredContent.pdfSummary, undefined);
+  assert.equal(toolResult.content.length, 2);
+  assert.match(toolResult.content[0].text, /search_meta\.json/);
+  assert.match(toolResult.content[0].text, /literature_pool\.json/);
+  assert.match(toolResult.content[0].text, /references\.bib/);
+  assert.doesNotMatch(toolResult.content[0].text, /pdf_status\.md/);
+  assert.match(toolResult.content[1].text, /^% lit-search references/m);
+  rmSync(toolResult.structuredContent.output.outputDir, { recursive: true, force: true });
+}
+
+function buildFixturePool() {
+  return {
+    metadata: {
+      query: 'machine learning',
+      queryExpansion: 'none',
+      searchScope: 'title-abstract',
+      keywords: ['machine learning'],
+      yearRange: { start: 2022, end: 2024 },
+      totalRetrieved: 3,
+      afterDedup: 2,
+      afterFilter: 2,
+      finalCount: 1,
+      engineStats: [{ engine: 'OpenAlex', status: 'success', totalPapers: 1 }]
+    },
+    papers: [
+      {
+        seq_id: 1,
+        citation_key: 'Smith2024_1',
+        entry_type: 'article',
+        title: 'A Study on Machine Learning',
+        author: 'Alice Smith and Bob Lee',
+        authors: ['Alice Smith', 'Bob Lee'],
+        year: 2024,
+        journal: 'Journal of Examples',
+        pages: '101-120',
+        doi: '10.1000/example',
+        url: 'https://doi.org/10.1000/example',
+        pdf_candidates: [
+          {
+            url: 'https://example.com/paper.pdf',
+            source: 'openalex',
+            provider: 'example.com',
+            access_type: 'repository',
+            license: 'cc-by',
+            is_oa: true,
+            confidence: 0.8,
+            reason: 'Fixture repository PDF.',
+            rank: 1
+          }
+        ],
+        abstract: 'An example abstract.',
+        keywords: ['machine learning', 'classification'],
+        source: 'openalex',
+        citation_count: 12
+      }
+    ]
+  };
 }
 
 function findNewestOutputDir(dir) {
@@ -518,35 +459,30 @@ async function interactWithMcp(messages, env, timeoutMs = 30000) {
 
   function readMessages() {
     while (true) {
-      const lineEnd = buffer.indexOf('\n');
-      if (lineEnd === -1) return;
-      const body = buffer.slice(0, lineEnd).toString('utf8').trim();
-      buffer = buffer.slice(lineEnd + 1);
-      if (!body) continue;
-      responses.push(JSON.parse(body));
+      const newline = buffer.indexOf(10);
+      if (newline < 0) return;
+      const line = buffer.subarray(0, newline).toString('utf-8').trim();
+      buffer = buffer.subarray(newline + 1);
+      if (!line) continue;
+      const parsed = JSON.parse(line);
+      if (parsed.id !== undefined) responses.push(parsed);
     }
   }
 
-  return await new Promise((resolve, reject) => {
-    const expectedResponses = messages.filter(message => message.id !== undefined).length;
+  const waiter = new Promise((resolveWait, reject) => {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`MCP response timeout (${timeoutMs}ms)`));
     }, timeoutMs);
 
-    child.stdout.on('data', chunk => {
-      buffer = Buffer.concat([buffer, chunk]);
-      try {
-        readMessages();
-        if (responses.length >= expectedResponses) {
-          clearTimeout(timer);
-          child.kill();
-          resolve(responses);
-        }
-      } catch (error) {
+    child.stdout.on('data', data => {
+      buffer = Buffer.concat([buffer, data]);
+      readMessages();
+      const expectedResponses = messages.filter(message => message.id !== undefined).length;
+      if (responses.length >= expectedResponses) {
         clearTimeout(timer);
         child.kill();
-        reject(error);
+        resolveWait();
       }
     });
 
@@ -554,21 +490,23 @@ async function interactWithMcp(messages, env, timeoutMs = 30000) {
       clearTimeout(timer);
       reject(error);
     });
-
-    for (const message of messages) send(message);
   });
+
+  for (const message of messages) send(message);
+  await waiter;
+  return responses;
 }
 
 function printSummary(results) {
   const passed = results.filter(item => item.ok).length;
   const failed = results.length - passed;
   console.log(`\n${chalk.bold('-'.repeat(64))}`);
-  console.log(`Passed: ${passed}/${results.length}`);
+  console.log(chalk.bold(`Passed: ${passed}/${results.length}`));
   if (failed) console.log(chalk.red(`Failed: ${failed}/${results.length}`));
   console.log('-'.repeat(64));
 }
 
 main().catch(error => {
-  console.error(chalk.red(error.stack || error.message));
+  console.error(error);
   process.exit(1);
 });

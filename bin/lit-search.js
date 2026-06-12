@@ -4,11 +4,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
-import ora from 'ora';
 import inquirer from 'inquirer';
-import { generateOutputFolderName, readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
-import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
-import { enrichMetadata, filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
+import { generateOutputFolderName } from '../lib/output-files.js';
+import { runLitSearchWorkflow } from '../lib/workflow.js';
+import { enrichMetadata, mergePools, resolveCitationsFile } from '../lib/pool-ops.js';
 import {
   createAppConfig,
   getResolvedApiKeys,
@@ -31,8 +30,7 @@ function parseArgs(args) {
     yearEnd: null,
     queryExpansion: 'none',
     searchScope: 'default-engine-search',
-    outputBaseDir: process.cwd(),
-    downloadPdf: false
+    outputBaseDir: process.cwd()
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -50,12 +48,11 @@ function parseArgs(args) {
       options.searchScope = normalizeSearchScope(args[++i]);
     } else if (arg === '--output-dir') {
       options.outputBaseDir = resolve(args[++i] || process.cwd());
-    } else if (arg === '--pdf') {
-      options.downloadPdf = true;
-    } else if (arg === '--no-pdf') {
-      options.downloadPdf = false;
+    } else if (arg === '--pdf' || arg === '--no-pdf' || arg === '--retry') {
+      console.error(chalk.red('PDF download options have been removed. lit-search now writes only search_meta.json, literature_pool.json, and references.bib.'));
+      process.exit(1);
     } else if (arg === '--format') {
-      console.error(chalk.red('The --format option has been removed. lit-search now always writes md and bib outputs.'));
+      console.error(chalk.red('The --format option has been removed. lit-search now writes search_meta.json, literature_pool.json, and references.bib.'));
       process.exit(1);
     } else if (arg === '--help' || arg === '-h') {
       printHelp();
@@ -78,10 +75,8 @@ lit-search v${packageJson.version}
 Usage:
   lit-search [query] [options]
   lit-search search [query] [options]
-  lit-search pdf <pool-folder|literature_pool.json|pdf_status.md> [--retry all|failed|missing]
-  lit-search status <pool-folder|literature_pool.json|pdf_status.md>
   lit-search merge <pool...> -o <output-dir>
-  lit-search enrich <pool-folder|literature_pool.json|literature_pool.md>
+  lit-search enrich <pool-folder|literature_pool.json>
   lit-search resolve <citations.txt> [options]
   lit-search init
 
@@ -95,9 +90,6 @@ Options:
   --expand <mode>          Query expansion: none|pairwise|full (default: none)
   --search-scope <mode>    title-only|title-abstract|default-engine-search
   --output-dir <dir>       Parent directory for generated result folders
-  --pdf                    Download PDFs after writing literature pool files
-  --no-pdf                 Do not download PDFs (default)
-  --retry <mode>           PDF retry mode for "pdf": all|failed|missing (default: all)
   --enrich                 After merge, enrich missing metadata in the merged pool
   --fields <list>          For enrich, comma-separated metadata fields to enrich
   --only-missing [fields]  For enrich, only fill missing fields, e.g. abstract
@@ -110,19 +102,13 @@ Options:
 
 Output:
   A new folder is created for each run. It contains:
-  - literature_pool.md
+  - search_meta.json
   - literature_pool.json
   - references.bib
-  - pdf_status.md
-  - pdfs/
 
 Examples:
   lit-search init
   lit-search "machine learning" -l 5 -s 2022
-  lit-search search "machine learning" --pdf
-  lit-search pdf .\\lit_search_20260518_153020
-  lit-search pdf .\\lit_search_20260518_153020\\pdf_status.md --retry failed
-  lit-search status .\\lit_search_20260518_153020
   lit-search merge .\\batch1 .\\batch2 -o .\\merged
   lit-search merge .\\batch1 .\\batch2 -o .\\merged --enrich
   lit-search enrich .\\merged
@@ -171,14 +157,6 @@ async function main() {
   }
 
   const command = args[0];
-  if (command === 'pdf') {
-    await runPdfCommand(args.slice(1));
-    return;
-  }
-  if (command === 'status') {
-    await runStatusCommand(args.slice(1));
-    return;
-  }
   if (command === 'merge') {
     await runMergeCommand(args.slice(1));
     return;
@@ -213,8 +191,6 @@ async function main() {
   }
   console.log();
 
-  let spinner = null;
-
   try {
     const workflow = await runLitSearchWorkflow({
       query: options.query,
@@ -227,29 +203,16 @@ async function main() {
       searchScope: options.searchScope,
       engines: config.get('engines') || {},
       apiKeys: getResolvedApiKeys(config),
-      outputBaseDir: options.outputBaseDir,
-      downloadPdf: options.downloadPdf,
-      hooks: {
-        onBeforePdfDownload: () => {
-          if (process.stdout.isTTY) {
-            spinner = ora('Downloading PDFs...').start();
-          }
-        }
-      }
+      outputBaseDir: options.outputBaseDir
     });
 
-    const { result, output, pdfSummary } = workflow;
+    const { result, output } = workflow;
 
-    if (spinner) {
-      spinner.succeed(`Done. ${result.papers.length} papers found.`);
-    } else {
-      console.log(chalk.green(`Done. ${result.papers.length} papers found.`));
-    }
+    console.log(chalk.green(`Done. ${result.papers.length} papers found.`));
     console.log(chalk.green(`\nResult folder: ${output.outputDir}`));
-    console.log(`  Literature pool: ${output.literaturePoolFile}`);
+    console.log(`  Search metadata: ${output.metaFile}`);
+    console.log(`  Literature pool: ${output.poolJsonFile}`);
     console.log(`  BibTeX:          ${output.bibFile}`);
-    console.log(`  PDF status:      ${output.pdfStatusFile}`);
-    console.log(`  PDFs:            ${pdfSummary.pdfDir} (${pdfSummary.downloaded}/${pdfSummary.total} downloaded)`);
 
     console.log(chalk.bold('\nSummary:'));
     console.log(`  Retrieved:    ${result.metadata.totalRetrieved}`);
@@ -268,47 +231,10 @@ async function main() {
       }
     }
   } catch (error) {
-    if (spinner) {
-      spinner.fail('Search failed.');
-    } else {
-      console.error(chalk.red('Search failed.'));
-    }
+    console.error(chalk.red('Search failed.'));
     console.error(chalk.red(error.message));
     process.exit(1);
   }
-}
-
-async function runPdfCommand(args) {
-  const target = args[0];
-  if (!target) {
-    throw new Error('Please provide a pool folder or literature_pool.json path.');
-  }
-  const poolFile = resolvePoolPath(target);
-  const pool = readLiteraturePool(poolFile);
-  const retryMode = getOptionValue(args, '--retry') || 'all';
-  const targetPapers = filterPapersForPdfRetry(pool.papers || [], retryMode);
-  const outputDir = dirname(poolFile);
-  const spinner = process.stdout.isTTY ? ora('Downloading PDFs...').start() : null;
-  const workflow = await downloadPoolPdfs(pool, outputDir, { logger: console, papers: targetPapers });
-  if (spinner) spinner.succeed('PDF download complete.');
-  console.log(chalk.green(`PDF status: ${workflow.output.pdfStatusFile}`));
-  console.log(`PDFs: ${workflow.output.pdfDir} (${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded)`);
-}
-
-async function runStatusCommand(args) {
-  const target = args[0];
-  if (!target) {
-    throw new Error('Please provide a pool folder or literature_pool.json path.');
-  }
-  const pool = readLiteraturePool(target);
-  const summary = summarizePool(pool);
-  console.log(chalk.bold('\nlit-search status\n'));
-  console.log(`Papers: ${summary.papers}`);
-  console.log(`PDF downloaded: ${summary.pdf.downloaded}`);
-  console.log(`PDF not attempted: ${summary.pdf.notAttempted}`);
-  console.log(`PDF missing URL: ${summary.pdf.missingUrl}`);
-  console.log(`PDF failed: ${summary.pdf.failed}`);
-  console.log(`PDF skipped: ${summary.pdf.skipped}`);
 }
 
 async function runMergeCommand(args) {
@@ -332,14 +258,15 @@ async function runMergeCommand(args) {
   }
   console.log(chalk.green(`Merged ${inputs.length} pool(s) into ${outputDir}`));
   console.log(`Papers: ${result.pool.papers.length}`);
-  console.log(`Literature pool: ${result.files.literaturePoolFile}`);
+  console.log(`Search metadata: ${result.files.metaFile}`);
+  console.log(`Literature pool: ${result.files.poolJsonFile}`);
   console.log(`BibTeX: ${result.files.bibFile}`);
 }
 
 async function runEnrichCommand(args) {
   const target = args[0];
   if (!target) {
-    throw new Error('Please provide a pool folder, literature_pool.json, or literature_pool.md path.');
+    throw new Error('Please provide a pool folder or literature_pool.json path.');
   }
   const onlyMissing = args.includes('--only-missing');
   const onlyMissingFields = getOptionValue(args, '--only-missing');
@@ -365,7 +292,9 @@ async function runEnrichCommand(args) {
   console.log(`Enriched papers:  ${result.stats.enrichedPapers}`);
   console.log(`Enriched fields:  ${result.stats.enrichedFields}`);
   console.log(`Lookup failed:    ${result.stats.lookupFailed}`);
-  console.log(`Literature pool:  ${result.files.literaturePoolFile}`);
+  console.log(`Search metadata:  ${result.files.metaFile}`);
+  console.log(`Literature pool:  ${result.files.poolJsonFile}`);
+  console.log(`BibTeX:           ${result.files.bibFile}`);
 }
 
 async function runResolveCommand(args) {

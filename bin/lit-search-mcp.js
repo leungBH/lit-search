@@ -6,9 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { downloadPoolPdfs, runLitSearchWorkflow } from '../lib/workflow.js';
-import { readLiteraturePool, resolvePoolPath } from '../lib/output-files.js';
-import { enrichMetadata, filterPapersForPdfRetry, mergePools, resolveCitationsFile, summarizePool } from '../lib/pool-ops.js';
+import { runLitSearchWorkflow } from '../lib/workflow.js';
+import { enrichMetadata, mergePools, resolveCitationsFile } from '../lib/pool-ops.js';
 import { createAppConfig, getResolvedApiKeys } from '../lib/app-config.js';
 import { silentLogger } from '../lib/logger.js';
 
@@ -33,28 +32,23 @@ server.registerTool(
     title: 'Search Literature',
     description: [
       'Search academic literature across Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE.',
-      'This tool does not only return metadata: every call creates a local result folder.',
-      'By default it only searches and writes the literature pool; it does not download PDFs unless downloadPdf=true.',
-      'The folder always contains literature_pool.md, literature_pool.json, references.bib, pdf_status.md, and a pdfs/ subfolder.',
-      'Read structuredContent.output for outputDir, literaturePoolFile, bibFile, pdfStatusFile, poolJsonFile, and pdfDir.',
-      'Read structuredContent.pdfSummary for PDF status and download diagnostics.',
+      'Every call creates a local result folder with exactly three default files: search_meta.json, literature_pool.json, and references.bib.',
+      'search_meta.json records the query, keywords, time range, source list, timestamps, and retrieval statistics for reproducibility.',
+      'literature_pool.json is the complete machine-readable result set. references.bib is a LaTeX-friendly BibTeX export.',
+      'PDF downloading is intentionally not supported by lit-search.',
       'lit-search already searches enabled literature sources inside one tool call; do not split one research request into parallel lit-search subtasks.',
-      'Agent guidance: treat each independent concept as a separate keyword.',
       'Use comma-separated query text such as "ontology, knowledge graph, semantic web".',
       'Do not send a long space-separated bag of concepts such as "ontology knowledge graph semantic web"; that is interpreted as one phrase and may over-filter results.',
-      'For several independent research topics, prefer sequential lit-search calls with modest limits instead of parallel calls to avoid upstream API limits.',
-      'Use outputDir to choose the parent directory where the generated result folder will be created.',
-      'Use queryExpansion="none" for broad recall, "pairwise" only when combinations are needed, and keep limit modest because it is per keyword per source.'
+      'Use outputDir to choose the parent directory where the generated result folder will be created.'
     ].join(' '),
     inputSchema: {
-      query: z.string().min(1).describe('Search query. For multiple concepts, prefer comma-separated terms, e.g. "ontology, knowledge graph, semantic web". Avoid long space-separated bags of concepts.'),
+      query: z.string().min(1).describe('Search query. For multiple concepts, prefer comma-separated terms, e.g. "ontology, knowledge graph, semantic web".'),
       limit: z.number().optional().describe('Per-keyword, per-source retrieval limit. Default: 3.'),
       yearStart: z.number().optional().describe('Inclusive start year.'),
       yearEnd: z.number().optional().describe('Inclusive end year.'),
-      queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none. Use pairwise/full only after splitting concepts into keywords.'),
-      searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search for recall; title-only is strict.'),
-      outputDir: z.string().optional().describe('Parent directory for generated result folders. The tool still creates a timestamped result folder containing literature_pool.md, references.bib, pdf_status.md, and pdfs/.'),
-      downloadPdf: z.boolean().optional().describe('Whether to download PDFs immediately. Default false; prefer false for agent workflows, then call CLI pdf workflow explicitly if needed.')
+      queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none.'),
+      searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search.'),
+      outputDir: z.string().optional().describe('Parent directory for generated result folders.')
     }
   },
   async args => {
@@ -68,15 +62,10 @@ server.registerTool(
       yearEnd: normalizeOptionalNumber(args.yearEnd),
       limit: normalizeOptionalNumber(args.limit) || 3,
       queryExpansion: normalizeEnum(args.queryExpansion, ['none', 'pairwise', 'full'], 'none'),
-      searchScope: normalizeEnum(
-        args.searchScope,
-        ['title-only', 'title-abstract', 'default-engine-search'],
-        'default-engine-search'
-      ),
+      searchScope: normalizeEnum(args.searchScope, ['title-only', 'title-abstract', 'default-engine-search'], 'default-engine-search'),
       apiKeys: getResolvedApiKeys(config),
       logger: silentLogger,
-      outputBaseDir: args.outputDir || process.cwd(),
-      downloadPdf: args.downloadPdf === true
+      outputBaseDir: args.outputDir || process.cwd()
     });
 
     workflow.result.metadata.agentGuidance = agentGuidance;
@@ -90,114 +79,12 @@ server.registerTool(
         },
         {
           type: 'text',
-          text: workflow.markdown
-        },
-        {
-          type: 'text',
           text: workflow.bibtex
         }
       ],
       structuredContent: {
         ...workflow.result,
-        output: workflow.output,
-        pdfSummary: workflow.pdfSummary
-      }
-    };
-  }
-);
-
-server.registerTool(
-  'download_pdfs',
-  {
-    title: 'Download PDFs',
-    description: [
-      'Download PDFs for an existing lit-search literature pool.',
-      'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
-      'This is the MCP equivalent of "lit-search pdf". It updates literature_pool.md, references.bib, pdf_status.md, and literature_pool.json in place.',
-      'Use retry="failed" to only retry papers with downloadable PDF candidates that are not already downloaded.',
-      'Use retry="missing" only to refresh status for papers without downloadable PDF candidates; these cannot be downloaded automatically.',
-      'Do not run multiple PDF download calls in parallel for the same pool.'
-    ].join(' '),
-    inputSchema: {
-      poolPath: z.string().min(1).describe('Path to a lit-search result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.'),
-      retry: z.enum(['all', 'failed', 'missing']).optional().describe('Retry mode. Default all; failed skips already-downloaded PDFs.')
-    }
-  },
-  async args => {
-    logDebug(`tool download_pdfs args=${JSON.stringify(args)}`);
-    const poolFile = resolvePoolPath(args.poolPath);
-    const pool = readLiteraturePool(poolFile);
-    const outputDir = dirname(poolFile);
-    const retryMode = normalizeEnum(args.retry, ['all', 'failed', 'missing'], 'all');
-    const targetPapers = filterPapersForPdfRetry(pool.papers || [], retryMode);
-    const workflow = await downloadPoolPdfs(pool, outputDir, {
-      logger: silentLogger,
-      papers: targetPapers
-    });
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: [
-            'lit-search PDF download completed.',
-            '',
-            `Result folder: ${workflow.output.outputDir}`,
-            `PDF status: ${workflow.output.pdfStatusFile}`,
-            `PDFs: ${workflow.output.pdfDir}`,
-            '',
-            `PDF status: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
-            'Inspect structuredContent.pdfSummary.results for failure codes, reasons, and suggested next actions.'
-          ].join('\n')
-        }
-      ],
-      structuredContent: {
-        output: workflow.output,
-        pdfSummary: workflow.pdfSummary
-      }
-    };
-  }
-);
-
-server.registerTool(
-  'pool_status',
-  {
-    title: 'Literature Pool Status',
-    description: [
-      'Summarize an existing lit-search literature pool.',
-      'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
-      'This is the MCP equivalent of "lit-search status".'
-    ].join(' '),
-    inputSchema: {
-      poolPath: z.string().min(1).describe('Path to a lit-search result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.')
-    }
-  },
-  async args => {
-    logDebug(`tool pool_status args=${JSON.stringify(args)}`);
-    const poolFile = resolvePoolPath(args.poolPath);
-    const pool = readLiteraturePool(poolFile);
-    const summary = summarizePool(pool);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: [
-            'lit-search pool status.',
-            '',
-            `Pool: ${poolFile}`,
-            `Papers: ${summary.papers}`,
-            `PDF downloaded: ${summary.pdf.downloaded}`,
-            `PDF not attempted: ${summary.pdf.notAttempted}`,
-            `PDF missing URL: ${summary.pdf.missingUrl}`,
-            `PDF failed: ${summary.pdf.failed}`,
-            `PDF skipped: ${summary.pdf.skipped}`
-          ].join('\n')
-        }
-      ],
-      structuredContent: {
-        poolFile,
-        summary
+        output: workflow.output
       }
     };
   }
@@ -209,9 +96,8 @@ server.registerTool(
     title: 'Merge Literature Pools',
     description: [
       'Merge multiple lit-search literature pools into one deduplicated pool.',
-      'Inputs can be result folders, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
-      'This is the MCP equivalent of "lit-search merge".',
-      'Merging writes literature_pool.md, literature_pool.json, references.bib, pdf_status.md, and pdfs/ into outputDir.'
+      'Inputs can be result folders or literature_pool.json files.',
+      'Merging writes search_meta.json, literature_pool.json, and references.bib into outputDir.'
     ].join(' '),
     inputSchema: {
       inputs: z.array(z.string().min(1)).min(1).describe('Pool paths to merge.'),
@@ -232,24 +118,15 @@ server.registerTool(
             '',
             `Result folder: ${outputDir}`,
             `Papers: ${result.pool.papers.length}`,
-            `Literature pool: ${result.files.literaturePoolFile}`,
-            `BibTeX: ${result.files.bibFile}`,
-            `PDF status: ${result.files.pdfStatusFile}`
+            `Search metadata: ${result.files.metaFile}`,
+            `Literature pool: ${result.files.poolJsonFile}`,
+            `BibTeX: ${result.files.bibFile}`
           ].join('\n')
         }
       ],
       structuredContent: {
         ...result.pool,
-        output: {
-          outputDir,
-          literaturePoolFile: result.files.literaturePoolFile,
-          markdownFile: result.files.markdownFile,
-          bibFile: result.files.bibFile,
-          pdfStatusFile: result.files.pdfStatusFile,
-          poolJsonFile: result.files.poolJsonFile,
-          metaFile: result.files.metaFile,
-          pdfDir: join(outputDir, 'pdfs')
-        }
+        output: buildOutputObject(outputDir, result.files)
       }
     };
   }
@@ -261,21 +138,18 @@ server.registerTool(
     title: 'Enrich Metadata',
     description: [
       'Enrich missing metadata in an existing lit-search literature pool.',
-      'Input can be a result folder, literature_pool.json, literature_pool.md, results.md, or pdf_status.md.',
-      'This is the MCP equivalent of "lit-search enrich".',
+      'Input can be a result folder or literature_pool.json.',
       'It looks up missing fields by arXiv ID, DOI via OpenAlex and Semantic Scholar, source IDs, then title fallback.',
-      'Fields include abstract, keywords, journal/venue, DOI, URL, volume/issue/pages, publisher, language, work_type, identifiers, and pdf_candidates.',
-      'It rewrites literature_pool.json, literature_pool.md, references.bib, and search_meta.json in place.',
-      'By default it does not overwrite existing metadata.',
+      'It rewrites search_meta.json, literature_pool.json, and references.bib in place.',
       'For agent workflows that only need abstracts, call with fields="abstract", onlyMissing=true, concurrency=1, and checkpointInterval=5.',
       'Do not run multiple enrich_metadata calls in parallel for the same pool.'
     ].join(' '),
     inputSchema: {
-      poolPath: z.string().min(1).describe('Path to a lit-search result folder or pool file.'),
+      poolPath: z.string().min(1).describe('Path to a lit-search result folder or literature_pool.json file.'),
       fields: z.string().optional().describe('Comma-separated fields to enrich. Default: all supported metadata fields.'),
-      onlyMissing: z.boolean().optional().describe('Only fill missing requested fields. Default false, but existing fields are still preserved unless overwrite=true.'),
+      onlyMissing: z.boolean().optional().describe('Only fill missing requested fields.'),
       checkpointInterval: z.number().optional().describe('Save progress every n processed papers. Default: 5. Use 0 to disable checkpoint writes.'),
-      concurrency: z.number().optional().describe('Paper-level enrichment concurrency. Default: 1. Keep 1 unless the user accepts upstream API limit risk.'),
+      concurrency: z.number().optional().describe('Paper-level enrichment concurrency. Default: 1.'),
       overwrite: z.boolean().optional().describe('Whether to refresh existing metadata too. Default false.')
     }
   },
@@ -308,22 +182,15 @@ server.registerTool(
             `Enriched papers: ${result.stats.enrichedPapers}`,
             `Enriched fields: ${result.stats.enrichedFields}`,
             `Lookup failed: ${result.stats.lookupFailed}`,
-            `Literature pool: ${result.files.literaturePoolFile}`
+            `Search metadata: ${result.files.metaFile}`,
+            `Literature pool: ${result.files.poolJsonFile}`,
+            `BibTeX: ${result.files.bibFile}`
           ].join('\n')
         }
       ],
       structuredContent: {
         ...result.pool,
-        output: {
-          outputDir: result.outputDir,
-          literaturePoolFile: result.files.literaturePoolFile,
-          markdownFile: result.files.markdownFile,
-          bibFile: result.files.bibFile,
-          pdfStatusFile: result.files.pdfStatusFile,
-          poolJsonFile: result.files.poolJsonFile,
-          metaFile: result.files.metaFile,
-          pdfDir: join(result.outputDir, 'pdfs')
-        },
+        output: buildOutputObject(result.outputDir, result.files),
         metadataSummary: result.stats
       }
     };
@@ -337,8 +204,7 @@ server.registerTool(
     description: [
       'Resolve concrete citation strings from a text file into a lit-search literature pool.',
       'Use this when the user has references copied from a paper rather than broad keywords.',
-      'This is the MCP equivalent of "lit-search resolve".',
-      'The result is search-only by default; call download_pdfs afterwards if full-text PDF download is requested.'
+      'The result folder contains search_meta.json, literature_pool.json, and references.bib.'
     ].join(' '),
     inputSchema: {
       citationsFile: z.string().min(1).describe('Path to a UTF-8 text file containing numbered or bracketed citation lines.'),
@@ -367,24 +233,15 @@ server.registerTool(
             `Result folder: ${outputDir}`,
             `Resolved: ${result.pool.papers.length}`,
             `Unresolved: ${result.unresolved.length}`,
-            `Literature pool: ${result.files.literaturePoolFile}`,
-            `BibTeX: ${result.files.bibFile}`,
-            `PDF status: ${result.files.pdfStatusFile}`
+            `Search metadata: ${result.files.metaFile}`,
+            `Literature pool: ${result.files.poolJsonFile}`,
+            `BibTeX: ${result.files.bibFile}`
           ].join('\n')
         }
       ],
       structuredContent: {
         ...result.pool,
-        output: {
-          outputDir,
-          literaturePoolFile: result.files.literaturePoolFile,
-          markdownFile: result.files.markdownFile,
-          bibFile: result.files.bibFile,
-          pdfStatusFile: result.files.pdfStatusFile,
-          poolJsonFile: result.files.poolJsonFile,
-          metaFile: result.files.metaFile,
-          pdfDir: join(outputDir, 'pdfs')
-        },
+        output: buildOutputObject(outputDir, result.files),
         unresolved: result.unresolved
       }
     };
@@ -427,21 +284,30 @@ function buildAgentGuidance(query) {
   };
 }
 
+function buildOutputObject(outputDir, files) {
+  return {
+    outputDir,
+    metaFile: files.metaFile,
+    poolJsonFile: files.poolJsonFile,
+    bibFile: files.bibFile,
+    files: [
+      { type: 'json', role: 'search_metadata', path: files.metaFile },
+      { type: 'json', role: 'literature_pool', path: files.poolJsonFile },
+      { type: 'bibtex', role: 'citation_export', path: files.bibFile }
+    ]
+  };
+}
+
 function buildMcpOutputSummary(workflow) {
   return [
     'lit-search completed.',
     '',
     'Local files created:',
-    `- Literature pool: ${workflow.output.literaturePoolFile}`,
+    `- Search metadata: ${workflow.output.metaFile}`,
+    `- Literature pool: ${workflow.output.poolJsonFile}`,
     `- BibTeX: ${workflow.output.bibFile}`,
-    `- PDF status: ${workflow.output.pdfStatusFile}`,
-    `- Machine-readable pool: ${workflow.output.poolJsonFile}`,
-    `- PDFs: ${workflow.output.pdfDir}`,
     '',
-    `PDF status: ${workflow.pdfSummary.downloaded}/${workflow.pdfSummary.total} downloaded, ${workflow.pdfSummary.failed} failed, ${workflow.pdfSummary.skipped} skipped.`,
-    '',
-    'Use literature_pool.md for readable paper summaries, references.bib for Zotero/EndNote/Mendeley citation import, pdf_status.md for PDF status, and the pdfs/ folder for downloaded full texts.',
-    'If a PDF failed or has not been downloaded, inspect structuredContent.pdfSummary.results or pdf_status.md for the reason and suggested next action.',
+    'Use search_meta.json to reproduce the search, literature_pool.json for complete machine-readable results, and references.bib for LaTeX/reference-manager import.',
     'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.'
   ].join('\n');
 }
