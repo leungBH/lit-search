@@ -10,7 +10,11 @@ import { renderOutput } from './lib/output.js';
 import { writeResultFiles } from './lib/output-files.js';
 import { normalizePdfCandidates } from './lib/pdf-candidates.js';
 import { enrichMetadataInPool } from './lib/metadata-enricher.js';
+import { resolvePublicationForPaper } from './lib/publication-resolver.js';
 import { generateQueries } from './lib/search.js';
+import { EuropePmcAPI, DblpAPI, DoajAPI } from './lib/apis/index.js';
+import { parseRetryAfterMs } from './lib/apis/semantic-scholar.js';
+import { getEnvApiKeys } from './lib/app-config.js';
 
 const cliEntry = resolve(process.cwd(), 'bin/lit-search.js');
 const mcpEntry = resolve(process.cwd(), 'bin/lit-search-mcp.js');
@@ -27,6 +31,10 @@ async function main() {
   results.push(await runTest('BibTeX renderer', testBibTeXRenderer));
   results.push(await runTest('result file output', testResultFiles));
   results.push(await runTest('PDF candidate normalization', testPdfCandidateNormalization));
+  results.push(await runTest('new source normalizers', testNewSourceNormalizers));
+  results.push(await runTest('free source config keys', testFreeSourceConfigKeys));
+  results.push(await runTest('Semantic Scholar Retry-After parser', testSemanticScholarRetryAfterParser));
+  results.push(await runTest('publication resolution', testPublicationResolution));
   results.push(await runTest('metadata enrichment', testMetadataEnrichment));
   results.push(await runTest('query expansion', testQueryExpansion));
   results.push(await runTest('parallel source orchestration', testParallelSourceOrchestration));
@@ -74,6 +82,10 @@ function testCliHelp() {
   assert.match(output, /literature_pool\.json/);
   assert.match(output, /references\.bib/);
   assert.match(output, /--output-dir/);
+  assert.match(output, /--resolve-preprint/);
+  assert.match(output, /--prefer-published/);
+  assert.match(output, /NCBI API Key/);
+  assert.match(output, /Unpaywall email/);
   assert.match(output, /lit-search enrich/);
   assert.match(output, /--enrich/);
   assert.match(output, /--only-missing/);
@@ -99,6 +111,73 @@ function testBibTeXRenderer() {
   assert.doesNotMatch(bib, /pdfurl/);
   assert.doesNotMatch(bib, /pdfcandidates/);
   assert.doesNotMatch(bib, /citationcount/);
+}
+
+async function testPublicationResolution() {
+  const arxivPaper = {
+    seq_id: 1,
+    citation_key: 'Vaswani2017_1',
+    entry_type: 'misc',
+    title: 'Attention Is All You Need',
+    author: 'Ashish Vaswani and Noam Shazeer',
+    authors: ['Ashish Vaswani', 'Noam Shazeer'],
+    year: 2017,
+    journal: 'arXiv',
+    venue: 'arXiv',
+    doi: null,
+    url: 'https://arxiv.org/abs/1706.03762',
+    arxiv_id: '1706.03762',
+    primary_category: 'cs.CL',
+    identifiers: { arxiv: '1706.03762' },
+    pdf_candidates: [
+      {
+        url: 'https://arxiv.org/pdf/1706.03762.pdf',
+        source: 'arxiv',
+        provider: 'arxiv',
+        access_type: 'arxiv',
+        confidence: 0.98
+      }
+    ],
+    source: 'arxiv'
+  };
+
+  const openalexFormal = {
+    title: 'Attention Is All You Need',
+    author: 'Ashish Vaswani and Noam Shazeer',
+    authors: ['Ashish Vaswani', 'Noam Shazeer'],
+    year: 2017,
+    journal: 'Advances in Neural Information Processing Systems',
+    venue: 'Advances in Neural Information Processing Systems',
+    pages: '5998-6008',
+    doi: '10.5555/3295222.3295349',
+    url: 'https://papers.nips.cc/paper/7181-attention-is-all-you-need',
+    source: 'openalex',
+    identifiers: { openalex: 'https://openalex.org/W123', doi: '10.5555/3295222.3295349' }
+  };
+
+  const resolved = await resolvePublicationForPaper(arxivPaper, {
+    preferPublished: true,
+    openalex: {
+      fetchWorkByDoi: async () => null,
+      fetchWorkById: async () => null,
+      searchWorks: async () => [openalexFormal]
+    }
+  });
+
+  assert.equal(resolved.publication_status, 'published');
+  assert.equal(resolved.citation_metadata_preference, 'published_version');
+  assert.equal(resolved.doi, '10.5555/3295222.3295349');
+  assert.equal(resolved.journal, 'Advances in Neural Information Processing Systems');
+  assert.equal(resolved.pages, '5998-6008');
+  assert.equal(resolved.preprint.arxiv_id, '1706.03762');
+  assert.equal(resolved.identity.arxiv_id, '1706.03762');
+
+  const bib = renderOutput({ metadata: {}, papers: [resolved] }, 'bib');
+  assert.match(bib, /doi = \{10\.5555\/3295222\.3295349\}/);
+  assert.match(bib, /journal = \{Advances in Neural Information Processing Systems\}/);
+  assert.match(bib, /pages = \{5998-6008\}/);
+  assert.match(bib, /eprint = \{1706\.03762\}/);
+  assert.match(bib, /archivePrefix = \{arXiv\}/);
 }
 
 function testResultFiles() {
@@ -160,6 +239,79 @@ function testPdfCandidateNormalization() {
     'reason',
     'rank'
   ]);
+}
+
+function testNewSourceNormalizers() {
+  const europePmc = new EuropePmcAPI()._normalizeItem({
+    id: '123',
+    pmid: '123',
+    pmcid: 'PMC123',
+    doi: '10.1000/pmc',
+    title: 'Europe PMC Example',
+    authorString: 'Alice Smith, Bob Lee',
+    pubYear: '2024',
+    journalTitle: 'Example Medicine',
+    abstractText: 'A medical abstract.',
+    keywordList: { keyword: ['medicine'] },
+    fullTextUrlList: { fullTextUrl: [{ url: 'https://example.org/a.pdf', documentStyle: 'pdf', availability: 'Open access', site: 'PMC' }] }
+  });
+  assert.equal(europePmc.source, 'europe-pmc');
+  assert.equal(europePmc.identifiers.pmid, '123');
+  assert.equal(europePmc.identifiers.pmcid, 'PMC123');
+  assert.equal(europePmc.pdfCandidates.length, 1);
+
+  const dblp = new DblpAPI()._normalizeHit({
+    info: {
+      key: 'conf/example/Smith24',
+      title: 'DBLP Example',
+      authors: { author: [{ text: 'Alice Smith' }] },
+      year: '2024',
+      venue: 'ICML',
+      type: 'Conference and Workshop Papers',
+      ee: 'https://doi.org/10.1000/dblp',
+      pages: '1-10'
+    }
+  });
+  assert.equal(dblp.source, 'dblp');
+  assert.equal(dblp.identifiers.dblp, 'conf/example/Smith24');
+  assert.equal(dblp.doi, '10.1000/dblp');
+  assert.equal(dblp.booktitle, 'ICML');
+
+  const doaj = new DoajAPI()._normalizeItem({
+    id: 'doaj-1',
+    bibjson: {
+      title: 'DOAJ Example',
+      year: '2024',
+      author: [{ name: 'Alice Smith' }],
+      journal: { title: 'Open Journal', publisher: 'OA Press', volume: '1', number: '2' },
+      identifier: [{ type: 'doi', id: '10.1000/doaj' }, { type: 'eissn', id: '1234-5678' }],
+      abstract: 'An open access abstract.',
+      keywords: ['open access'],
+      link: [{ url: 'https://example.org/doaj.pdf', type: 'fulltext' }]
+    }
+  });
+  assert.equal(doaj.source, 'doaj');
+  assert.equal(doaj.doi, '10.1000/doaj');
+  assert.equal(doaj.journal, 'Open Journal');
+  assert.equal(doaj.pdfCandidates.length, 2);
+}
+
+function testFreeSourceConfigKeys() {
+  const keys = getEnvApiKeys({
+    LIT_SEARCH_NCBI_API_KEY: 'ncbi-test',
+    LIT_SEARCH_UNPAYWALL_EMAIL: 'test@example.org'
+  });
+  assert.equal(keys.ncbi, 'ncbi-test');
+  assert.equal(keys.unpaywallEmail, 'test@example.org');
+}
+
+function testSemanticScholarRetryAfterParser() {
+  assert.equal(parseRetryAfterMs('3'), 3000);
+  assert.equal(parseRetryAfterMs('0'), 0);
+  const future = new Date(Date.now() + 5000).toUTCString();
+  const parsed = parseRetryAfterMs(future);
+  assert.ok(parsed >= 0 && parsed <= 6000);
+  assert.equal(parseRetryAfterMs('not-a-date'), null);
 }
 
 async function testMetadataEnrichment() {

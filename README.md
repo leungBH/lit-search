@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/lit-search?label=npm)](https://www.npmjs.com/package/lit-search)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-`lit-search` 是一个学术文献检索 CLI / MCP 服务，可同时检索 Semantic Scholar、OpenAlex、arXiv、CrossRef 和 CORE，并将结果整理为可复现、可继续处理、可用于 LaTeX 写作的文献池。
+`lit-search` 是一个学术文献检索 CLI / MCP 服务，可同时检索 Semantic Scholar、OpenAlex、arXiv、CrossRef、CORE、Europe PMC、DBLP 和 DOAJ，并将结果整理为可复现、可继续处理、可用于 LaTeX 写作的文献池。
 
 默认检索只生成三个文件：
 
@@ -18,10 +18,12 @@ lit_search_YYYYMMDD_HHMMSS/
 
 ## 特性
 
-- **多数据源检索**：Semantic Scholar、OpenAlex、arXiv、CrossRef、CORE。
+- **多数据源检索**：Semantic Scholar、OpenAlex、arXiv、CrossRef、CORE、Europe PMC、DBLP、DOAJ；PubMed 可选启用。
+- **免费权威源优先**：新增源均不需要机构购买或商业授权；PubMed/NCBI Key 和 Unpaywall email 只是免费限速/增强配置。
 - **可复现检索记录**：`search_meta.json` 记录时间、查询条件、关键词、年份范围、检索范围、数据源和统计信息。
 - **完整机器结果**：`literature_pool.json` 尽可能保留标题、作者、摘要、关键词、出版物、卷期页、DOI、URL、引用数、标识符、PDF 候选链接等结构化字段。
-- **BibTeX 导出**：`references.bib` 使用尽量主流、LaTeX 友好的字段，便于论文写作和导入 Zotero / EndNote / Mendeley。
+- **正式引用优先**：可将 arXiv 预印本反查为正式出版版本，引用信息优先使用正式 DOI、期刊/会议、卷期页。
+- **BibTeX 导出**：`references.bib` 使用尽量主流、LaTeX 友好的字段，便于论文写作和导入 Zotero / EndNote / Mendeley；开启正式出版解析后，BibTeX 优先来自正式出版元数据。
 - **去重合并**：按 DOI 和标题相似度合并重复文献。
 - **查询展开**：支持 `none`、`pairwise`、`full` 三种多关键词组合策略。
 - **检索范围控制**：支持 `title-only`、`title-abstract`、`default-engine-search`。
@@ -53,8 +55,49 @@ lit-search init
 - OpenAlex API Key
 - CrossRef contact email
 - CORE API Key
+- NCBI API Key，可选，用于 PubMed 更高限速
+- Unpaywall email，可选，用于 DOI 开放获取元数据增强
 
 没有 Key 时也可以使用部分公开接口，但限流会更明显。
+
+## 数据源
+
+默认检索源：
+
+- Semantic Scholar
+- OpenAlex
+- arXiv
+- CrossRef
+- CORE
+- Europe PMC
+- DBLP
+- DOAJ
+
+可选检索源：
+
+- PubMed / NCBI E-utilities：默认关闭，可在配置中启用；免费 NCBI API Key 只用于提高限速。
+
+单次运行启用 PubMed：
+
+```bash
+lit-search "cancer immunotherapy" --with-pubmed
+```
+
+增强源：
+
+- Unpaywall：通过 DOI 补充开放获取状态、许可证和 `pdf_candidates`，配置 email 后启用。
+- OpenCitations：通过 DOI 补充引用关系，默认关闭，适合后续引用扩展场景。
+
+单次运行启用 OpenCitations：
+
+```bash
+lit-search "knowledge distillation" --with-opencitations
+```
+
+暂不集成：
+
+- DataCite、OpenAIRE：覆盖大量数据集、软件、项目和机构产物，可能降低论文池纯度。
+- IEEE、Elsevier、Web of Science、Dimensions、Lens、Springer：更适合作为机构授权或付费增强源，不作为默认开源能力。
 
 ## CLI 用法
 
@@ -64,6 +107,8 @@ lit-search search "machine learning"
 lit-search "AI, coding, agent" -l 5 -s 2023
 lit-search "AI, coding, agent" --expand pairwise
 lit-search "computer vision" --search-scope title-only
+lit-search "attention is all you need" --resolve-preprint --prefer-published
+lit-search "cancer immunotherapy" --with-pubmed
 lit-search "machine learning" --output-dir ./results
 ```
 
@@ -87,6 +132,10 @@ lit-search init
 --expand <mode>          查询展开策略：none|pairwise|full，默认 none
 --search-scope <mode>    title-only|title-abstract|default-engine-search
 --output-dir <dir>       生成结果文件夹的父目录
+--resolve-preprint       尽可能将 arXiv 预印本解析为正式出版版本
+--prefer-published       引用字段和 BibTeX 优先使用正式出版元数据
+--with-pubmed            本次检索启用 PubMed/NCBI
+--with-opencitations     本次运行启用 OpenCitations DOI 引用关系增强
 --enrich                 merge 后立即补全缺失元数据
 --fields <list>          enrich 时指定字段，例如 abstract,keywords,doi,url,venue
 --only-missing [fields]  enrich 时只补缺失字段，例如 abstract
@@ -97,6 +146,26 @@ lit-search init
 ```
 
 `limit` 是“每个关键词、每个数据源”的上限，不是最终结果数量上限。
+
+## 正式出版元数据解析
+
+有些论文先以 arXiv 预印本出现，之后又正式发表在期刊或会议中。写论文时通常应该引用正式出版版本，但 PDF 候选链接仍然可以保留 arXiv。
+
+开启方式：
+
+```bash
+lit-search "attention is all you need" --resolve-preprint --prefer-published
+lit-search merge ./batch1 ./batch2 -o ./merged --prefer-published
+```
+
+当前策略：
+
+- 保持 `literature_pool.json` 现有顶层字段稳定。
+- 额外写入 `identity`、`citation_metadata`、`preprint`、`metadata_sources`、`publication_status`、`citation_metadata_preference`。
+- 对 arXiv 论文优先通过 DOI / OpenAlex / 标题作者年份匹配查找正式出版记录。
+- 开启 `--prefer-published` 后，顶层 `doi`、`journal`、`venue`、`pages`、`publisher` 等引用字段会尽量更新为正式出版版本。
+- `pdf_candidates` 不作为引用来源，只保留候选链接元数据。
+- `references.bib` 优先从 `citation_metadata` 生成；如果仍有 arXiv ID，会保留 `eprint`、`archivePrefix`、`primaryClass`。
 
 ## 多关键词策略
 
@@ -145,6 +214,16 @@ lit-search "ontology, knowledge graph, semantic web" -l 5
 - `source`
 - `identifiers`
 - `pdf_candidates`
+- `oa_status`
+- `is_oa`
+- `license`
+- `citation_relations`
+- `identity`
+- `citation_metadata`
+- `preprint`
+- `metadata_sources`
+- `publication_status`
+- `citation_metadata_preference`
 - `metadata_status`
 - `metadata_enrichment`
 
@@ -182,6 +261,12 @@ lit-search "ontology, knowledge graph, semantic web" -l 5
 
 ```bash
 lit-search merge ./batch1 ./batch2 -o ./merged
+```
+
+合并时优先正式出版元数据：
+
+```bash
+lit-search merge ./batch1 ./batch2 -o ./merged --prefer-published
 ```
 
 合并后补全缺失元数据：
@@ -237,6 +322,10 @@ resolve_citations
   "yearStart": 2020,
   "queryExpansion": "none",
   "searchScope": "default-engine-search",
+  "resolvePreprint": true,
+  "preferPublished": true,
+  "withPubMed": false,
+  "withOpenCitations": false,
   "outputDir": "D:/lit-search-results"
 }
 ```

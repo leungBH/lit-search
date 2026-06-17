@@ -31,14 +31,16 @@ server.registerTool(
   {
     title: 'Search Literature',
     description: [
-      'Search academic literature across Semantic Scholar, OpenAlex, arXiv, CrossRef, and CORE.',
+      'Search academic literature across Semantic Scholar, OpenAlex, arXiv, CrossRef, CORE, Europe PMC, DBLP, and DOAJ. PubMed can be enabled in configuration.',
       'Every call creates a local result folder with exactly three default files: search_meta.json, literature_pool.json, and references.bib.',
       'search_meta.json records the query, keywords, time range, source list, timestamps, and retrieval statistics for reproducibility.',
       'literature_pool.json is the complete machine-readable result set. references.bib is a LaTeX-friendly BibTeX export.',
+      'Unpaywall may enrich DOI records with open-access status and PDF candidates when an email is configured. OpenCitations is an optional citation-relation enhancer, not a normal keyword search source.',
       'PDF downloading is intentionally not supported by lit-search.',
       'lit-search already searches enabled literature sources inside one tool call; do not split one research request into parallel lit-search subtasks.',
       'Use comma-separated query text such as "ontology, knowledge graph, semantic web".',
       'Do not send a long space-separated bag of concepts such as "ontology knowledge graph semantic web"; that is interpreted as one phrase and may over-filter results.',
+      'Use resolvePreprint and preferPublished when citations should prefer formal publication metadata over arXiv preprint metadata.',
       'Use outputDir to choose the parent directory where the generated result folder will be created.'
     ].join(' '),
     inputSchema: {
@@ -48,6 +50,10 @@ server.registerTool(
       yearEnd: z.number().optional().describe('Inclusive end year.'),
       queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none.'),
       searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search.'),
+      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),
+      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'),
+      withPubMed: z.boolean().optional().describe('Enable optional PubMed/NCBI search for this call. Default false.'),
+      withOpenCitations: z.boolean().optional().describe('Enable optional OpenCitations DOI relation enrichment for this call. Default false.'),
       outputDir: z.string().optional().describe('Parent directory for generated result folders.')
     }
   },
@@ -63,7 +69,10 @@ server.registerTool(
       limit: normalizeOptionalNumber(args.limit) || 3,
       queryExpansion: normalizeEnum(args.queryExpansion, ['none', 'pairwise', 'full'], 'none'),
       searchScope: normalizeEnum(args.searchScope, ['title-only', 'title-abstract', 'default-engine-search'], 'default-engine-search'),
+      resolvePreprint: args.resolvePreprint === true || args.preferPublished === true,
+      preferPublished: args.preferPublished === true,
       apiKeys: getResolvedApiKeys(config),
+      engines: buildRuntimeEngines(args),
       logger: silentLogger,
       outputBaseDir: args.outputDir || process.cwd()
     });
@@ -97,17 +106,27 @@ server.registerTool(
     description: [
       'Merge multiple lit-search literature pools into one deduplicated pool.',
       'Inputs can be result folders or literature_pool.json files.',
-      'Merging writes search_meta.json, literature_pool.json, and references.bib into outputDir.'
+      'Merging writes search_meta.json, literature_pool.json, and references.bib into outputDir.',
+      'Use resolvePreprint and preferPublished when merged citation exports should prefer formal publication metadata.'
     ].join(' '),
     inputSchema: {
       inputs: z.array(z.string().min(1)).min(1).describe('Pool paths to merge.'),
-      outputDir: z.string().optional().describe('Directory for the merged pool. Default: ./merged_literature.')
+      outputDir: z.string().optional().describe('Directory for the merged pool. Default: ./merged_literature.'),
+      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),
+      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'),
+      withOpenCitations: z.boolean().optional().describe('Enable optional OpenCitations DOI relation enrichment while merging. Default false.')
     }
   },
   async args => {
     logDebug(`tool merge_pools args=${JSON.stringify(args)}`);
     const outputDir = resolve(args.outputDir || 'merged_literature');
-    const result = mergePools(args.inputs, outputDir);
+    const result = await mergePools(args.inputs, outputDir, {
+      resolvePreprint: args.resolvePreprint === true || args.preferPublished === true,
+      preferPublished: args.preferPublished === true,
+      apiKeys: getResolvedApiKeys(config),
+      logger: silentLogger,
+      engines: buildRuntimeEngines(args)
+    });
 
     return {
       content: [
@@ -209,7 +228,11 @@ server.registerTool(
     inputSchema: {
       citationsFile: z.string().min(1).describe('Path to a UTF-8 text file containing numbered or bracketed citation lines.'),
       outputDir: z.string().optional().describe('Directory for the resolved literature pool. Default: ./resolved_literature.'),
-      limit: z.number().optional().describe('Per-citation lookup limit. Default: 3.')
+      limit: z.number().optional().describe('Per-citation lookup limit. Default: 3.'),
+      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),
+      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'),
+      withPubMed: z.boolean().optional().describe('Enable optional PubMed/NCBI search for citation resolving. Default false.'),
+      withOpenCitations: z.boolean().optional().describe('Enable optional OpenCitations DOI relation enrichment. Default false.')
     }
   },
   async args => {
@@ -219,8 +242,10 @@ server.registerTool(
       limit: normalizeOptionalNumber(args.limit) || 3,
       outputDir,
       apiKeys: getResolvedApiKeys(config),
-      engines: config.get('engines') || {},
-      logger: silentLogger
+      engines: buildRuntimeEngines(args),
+      logger: silentLogger,
+      resolvePreprint: args.resolvePreprint === true || args.preferPublished === true,
+      preferPublished: args.preferPublished === true
     });
 
     return {
@@ -270,6 +295,14 @@ function normalizeEnum(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback;
 }
 
+function buildRuntimeEngines(args = {}) {
+  return {
+    ...(config.get('engines') || {}),
+    ...(args.withPubMed === true ? { pubmed: true } : {}),
+    ...(args.withOpenCitations === true ? { openCitations: true } : {})
+  };
+}
+
 function buildAgentGuidance(query) {
   const originalQuery = String(query || '').trim();
   const hasComma = originalQuery.includes(',');
@@ -299,6 +332,14 @@ function buildOutputObject(outputDir, files) {
 }
 
 function buildMcpOutputSummary(workflow) {
+  const publication = workflow.result.metadata?.publicationResolution;
+  const publicationLines = publication?.enabled ? [
+    '',
+    'Publication resolution:',
+    `- Attempted: ${publication.attempted}`,
+    `- Published metadata resolved: ${publication.resolvedPublished}`,
+    `- Preprint only: ${publication.preprintOnly}`
+  ] : [];
   return [
     'lit-search completed.',
     '',
@@ -306,6 +347,7 @@ function buildMcpOutputSummary(workflow) {
     `- Search metadata: ${workflow.output.metaFile}`,
     `- Literature pool: ${workflow.output.poolJsonFile}`,
     `- BibTeX: ${workflow.output.bibFile}`,
+    ...publicationLines,
     '',
     'Use search_meta.json to reproduce the search, literature_pool.json for complete machine-readable results, and references.bib for LaTeX/reference-manager import.',
     'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.'

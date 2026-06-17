@@ -30,7 +30,11 @@ function parseArgs(args) {
     yearEnd: null,
     queryExpansion: 'none',
     searchScope: 'default-engine-search',
-    outputBaseDir: process.cwd()
+    outputBaseDir: process.cwd(),
+    resolvePreprint: false,
+    preferPublished: false,
+    withPubMed: false,
+    withOpenCitations: false
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -48,6 +52,15 @@ function parseArgs(args) {
       options.searchScope = normalizeSearchScope(args[++i]);
     } else if (arg === '--output-dir') {
       options.outputBaseDir = resolve(args[++i] || process.cwd());
+    } else if (arg === '--resolve-preprint') {
+      options.resolvePreprint = true;
+    } else if (arg === '--prefer-published') {
+      options.preferPublished = true;
+      options.resolvePreprint = true;
+    } else if (arg === '--with-pubmed') {
+      options.withPubMed = true;
+    } else if (arg === '--with-opencitations') {
+      options.withOpenCitations = true;
     } else if (arg === '--pdf' || arg === '--no-pdf' || arg === '--retry') {
       console.error(chalk.red('PDF download options have been removed. lit-search now writes only search_meta.json, literature_pool.json, and references.bib.'));
       process.exit(1);
@@ -90,6 +103,10 @@ Options:
   --expand <mode>          Query expansion: none|pairwise|full (default: none)
   --search-scope <mode>    title-only|title-abstract|default-engine-search
   --output-dir <dir>       Parent directory for generated result folders
+  --resolve-preprint       Resolve arXiv preprints to formal publication metadata when possible
+  --prefer-published       Prefer formal publication metadata for top-level citation fields and BibTeX
+  --with-pubmed            Enable optional PubMed/NCBI search for this run
+  --with-opencitations     Enable optional OpenCitations DOI relation enrichment for this run
   --enrich                 After merge, enrich missing metadata in the merged pool
   --fields <list>          For enrich, comma-separated metadata fields to enrich
   --only-missing [fields]  For enrich, only fill missing fields, e.g. abstract
@@ -109,7 +126,10 @@ Output:
 Examples:
   lit-search init
   lit-search "machine learning" -l 5 -s 2022
+  lit-search "machine learning" --resolve-preprint --prefer-published
+  lit-search "cancer immunotherapy" --with-pubmed
   lit-search merge .\\batch1 .\\batch2 -o .\\merged
+  lit-search merge .\\batch1 .\\batch2 -o .\\merged --prefer-published
   lit-search merge .\\batch1 .\\batch2 -o .\\merged --enrich
   lit-search enrich .\\merged
   lit-search enrich .\\merged --fields abstract,keywords,doi,url,venue
@@ -118,6 +138,10 @@ Examples:
   lit-search resolve .\\citations.txt --output-dir .\\resolved
   lit-search "machine learning" -l 5 --output-dir ./results
   lit-search "AI, coding, agent" --expand pairwise --search-scope title-abstract
+
+Free optional keys configured by lit-search init:
+  NCBI API Key             Optional, improves PubMed rate limits
+  Unpaywall email          Optional, enables DOI open-access enrichment
 `);
 }
 
@@ -185,6 +209,9 @@ async function main() {
   console.log(`Limit: ${options.limit} per keyword per source`);
   console.log(`Expansion: ${options.queryExpansion}`);
   console.log(`Search scope: ${options.searchScope}`);
+  if (options.resolvePreprint || options.preferPublished) {
+    console.log(`Publication resolution: ${options.resolvePreprint ? 'resolve preprint' : 'off'}${options.preferPublished ? ', prefer published' : ''}`);
+  }
   console.log(`Output folder: ${plannedOutputDir}`);
   if (options.yearStart || options.yearEnd) {
     console.log(`Year range: ${options.yearStart || '...'} - ${options.yearEnd || '...'}`);
@@ -201,7 +228,9 @@ async function main() {
       limit: options.limit,
       queryExpansion: options.queryExpansion,
       searchScope: options.searchScope,
-      engines: config.get('engines') || {},
+      resolvePreprint: options.resolvePreprint,
+      preferPublished: options.preferPublished,
+      engines: buildRuntimeEngines(options),
       apiKeys: getResolvedApiKeys(config),
       outputBaseDir: options.outputBaseDir
     });
@@ -218,6 +247,10 @@ async function main() {
     console.log(`  Retrieved:    ${result.metadata.totalRetrieved}`);
     console.log(`  Deduplicated: ${result.metadata.afterDedup}`);
     console.log(`  Final:        ${result.metadata.finalCount}`);
+    if (result.metadata.publicationResolution?.enabled) {
+      const pub = result.metadata.publicationResolution;
+      console.log(`  Pub resolved: ${pub.resolvedPublished}/${pub.attempted}`);
+    }
 
     if (result.metadata.engineStats) {
       console.log(chalk.bold('\nEngines:'));
@@ -240,13 +273,22 @@ async function main() {
 async function runMergeCommand(args) {
   const outputIndex = args.findIndex(arg => arg === '-o' || arg === '--output-dir');
   const outputDir = outputIndex >= 0 ? resolve(args[outputIndex + 1]) : resolve('merged_literature');
-  const optionNames = new Set(['--enrich']);
+  const resolvePreprint = args.includes('--resolve-preprint') || args.includes('--prefer-published');
+  const preferPublished = args.includes('--prefer-published');
+  const withOpenCitations = args.includes('--with-opencitations');
+  const optionNames = new Set(['--enrich', '--resolve-preprint', '--prefer-published', '--with-opencitations']);
   const rawInputs = (outputIndex >= 0 ? args.slice(0, outputIndex) : args).filter(arg => !optionNames.has(arg));
   const inputs = rawInputs.flatMap(expandInputPattern);
   if (!inputs.length) {
     throw new Error('Please provide at least one pool folder or literature_pool.json path.');
   }
-  const result = mergePools(inputs, outputDir);
+  const result = await mergePools(inputs, outputDir, {
+    resolvePreprint,
+    preferPublished,
+    apiKeys: getResolvedApiKeys(config),
+    logger: console,
+    engines: buildRuntimeEngines({ withOpenCitations })
+  });
   if (args.includes('--enrich')) {
     const enriched = await enrichMetadata(outputDir, {
       apiKeys: getResolvedApiKeys(config),
@@ -310,8 +352,10 @@ async function runResolveCommand(args) {
     limit: options.limit,
     outputDir,
     apiKeys: getResolvedApiKeys(config),
-    engines: config.get('engines') || {},
-    logger: console
+    engines: buildRuntimeEngines(options),
+    logger: console,
+    resolvePreprint: options.resolvePreprint,
+    preferPublished: options.preferPublished
   });
   console.log(chalk.green(`Resolved citations into ${outputDir}`));
   console.log(`Resolved: ${result.pool.papers.length}`);
@@ -327,6 +371,14 @@ function expandInputPattern(pattern) {
     .filter(name => regex.test(name))
     .map(name => join(dir, name))
     .filter(path => existsSync(path));
+}
+
+function buildRuntimeEngines(options = {}) {
+  return {
+    ...(config.get('engines') || {}),
+    ...(options.withPubMed ? { pubmed: true } : {}),
+    ...(options.withOpenCitations ? { openCitations: true } : {})
+  };
 }
 
 function getOptionValue(args, name) {
@@ -372,6 +424,17 @@ async function runInit() {
       name: 'core',
       mask: '*',
       message: `CORE API Key${storedApiKeys.core ? ' (configured)' : ''}:`
+    },
+    {
+      type: 'password',
+      name: 'ncbi',
+      mask: '*',
+      message: `NCBI API Key for PubMed (optional)${storedApiKeys.ncbi ? ' (configured)' : ''}:`
+    },
+    {
+      type: 'input',
+      name: 'unpaywallEmail',
+      message: `Unpaywall email for OA metadata${storedApiKeys.unpaywallEmail ? ` (current: ${storedApiKeys.unpaywallEmail})` : ''}:`
     }
   ]);
 
@@ -379,7 +442,9 @@ async function runInit() {
     s2: resolveInitValue(answers.s2, storedApiKeys.s2),
     openalex: resolveInitValue(answers.openalex, storedApiKeys.openalex),
     crossrefMailto: resolveInitValue(answers.crossrefMailto, storedApiKeys.crossrefMailto),
-    core: resolveInitValue(answers.core, storedApiKeys.core)
+    core: resolveInitValue(answers.core, storedApiKeys.core),
+    ncbi: resolveInitValue(answers.ncbi, storedApiKeys.ncbi),
+    unpaywallEmail: resolveInitValue(answers.unpaywallEmail, storedApiKeys.unpaywallEmail)
   });
 
   const summary = summarizeApiKeySources(config);
@@ -389,6 +454,8 @@ async function runInit() {
   console.log(chalk.gray(`OpenAlex:         ${summary.values.openalex ? 'configured' : 'missing'}`));
   console.log(chalk.gray(`CrossRef mailto:  ${summary.values.crossrefMailto ? 'configured' : 'missing'}`));
   console.log(chalk.gray(`CORE:             ${summary.values.core ? 'configured' : 'missing'}`));
+  console.log(chalk.gray(`NCBI/PubMed:      ${summary.values.ncbi ? 'configured' : 'missing'}`));
+  console.log(chalk.gray(`Unpaywall email:  ${summary.values.unpaywallEmail ? 'configured' : 'missing'}`));
 }
 
 function resolveInitValue(input, currentValue) {
