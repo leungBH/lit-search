@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
@@ -15,6 +16,14 @@ import {
   saveApiKeys,
   summarizeApiKeySources
 } from '../lib/app-config.js';
+
+if (process.platform === 'win32') {
+  try {
+    execSync('chcp 65001', { stdio: 'ignore' });
+  } catch {}
+  process.stdout.setDefaultEncoding('utf8');
+  process.stderr.setDefaultEncoding('utf8');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -122,6 +131,16 @@ Output:
   - search_meta.json
   - literature_pool.json
   - references.bib
+
+Resolve input formats (one citation per line, or BibTeX entries):
+  - Bare title:     Attention Is All You Need
+  - Numbered list:  1. Attention Is All You Need
+  - Bracketed list: [1] Attention Is All You Need
+  - Quoted title:   "Attention Is All You Need"
+  - DOI:            10.1145/3292500.3330701
+  - Title + year:   Attention Is All You Need (2017)
+  - BibTeX entry:   @article{key, title={...}, year={2017}}
+  Empty lines are skipped. DOI and quoted titles are extracted automatically.
 
 Examples:
   lit-search init
