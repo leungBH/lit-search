@@ -1,6 +1,6 @@
 {
   "name": "lit-search",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Academic literature search CLI and MCP server for Semantic Scholar, OpenAlex, arXiv, CrossRef, CORE, Europe PMC, DBLP, DOAJ, and optional PubMed. Outputs reproducible metadata JSON, literature pool JSON, and BibTeX.",
   "keywords": [
     "literature",
@@ -34,7 +34,9 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "node bin/lit-search.js --help",
+    "test": "node tests/run.js",
+    "test:unit": "node tests/run.js",
+    "test:full": "node test.js",
     "test:acceptance": "node test.js",
     "test:smoke": "node test.js",
     "diagnose": "node diagnose.js"

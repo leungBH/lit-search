@@ -226,7 +226,7 @@ server.registerTool(
       'The result folder contains search_meta.json, literature_pool.json, and references.bib.'
     ].join(' '),
     inputSchema: {
-      citationsFile: z.string().min(1).describe('Path to a UTF-8 text file containing numbered or bracketed citation lines.'),
+      citationsFile: z.string().min(1).describe('Path to a UTF-8 text file with one citation per line. Supports: bare title, "1. title", "[1] title", "10.xxxx/yyyy" DOI, or BibTeX entries.'),
       outputDir: z.string().optional().describe('Directory for the resolved literature pool. Default: ./resolved_literature.'),
       limit: z.number().optional().describe('Per-citation lookup limit. Default: 3.'),
       resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),

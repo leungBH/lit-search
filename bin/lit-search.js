@@ -186,6 +186,8 @@ function normalizeSearchScope(value) {
   return normalized;
 }
 
+const KNOWN_COMMANDS = new Set(['init', 'merge', 'enrich', 'resolve', 'search']);
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -211,6 +213,15 @@ async function main() {
   if (command === 'resolve') {
     await runResolveCommand(args.slice(1));
     return;
+  }
+
+  if (command && command.startsWith('-')) {
+    // Flags go straight to the search flow below.
+  } else if (command && !KNOWN_COMMANDS.has(command)) {
+    console.error(chalk.red(`Unknown subcommand: ${command}`));
+    console.log('Available: init, merge, enrich, resolve, search (default), --help');
+    console.log('Run `lit-search --help` for details.');
+    process.exit(1);
   }
 
   const options = parseArgs(command === 'search' ? args.slice(1) : args);
