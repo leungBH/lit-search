@@ -432,7 +432,9 @@ git push origin main --follow-tags
 
 ### 依赖更新
 
-`dependabot` 每周一 09:00（北京时间）自动检查 npm 依赖更新，PR 会带 `dependencies` 和 `npm` label。CLI 表面相关的包（`commander`、`chalk`）会忽略 major 升级。
+`dependabot` 每周一 09:00（北京时间）自动检查 npm 依赖更新，PR 会带 `dependencies` 和 `npm` label，按 `production-dependencies` / `development-dependencies` 分组。
+
+CLI 表面相关的包（`commander`、`chalk`）会忽略 major 升级。`conf` 和 `inquirer` 当前在 ignore 列表里（`conf 14+` 要求 Node 20，超越本项目 `engines: >=18`；`inquirer 14+` 有破坏性 prompt 变化），需要升级时手动提 PR。
 
 ## License
 

@@ -10,7 +10,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: 'chore(deps)'
-      include: 'scope'
     labels:
       - 'dependencies'
       - 'npm'
@@ -20,8 +19,15 @@ updates:
       development-dependencies:
         dependency-type: 'development'
     ignore:
-      # Major bumps for these are likely to break the CLI surface.
+      # These are CLI surface libraries. Major bumps may break argument
+      # parsing / output rendering. They require an explicit PR with
+      # a migration note.
       - dependency-name: 'commander'
         update-types: ['version-update:semver-major']
       - dependency-name: 'chalk'
         update-types: ['version-update:semver-major']
+      # conf 14+ requires Node 20; project's engines is ">=18".
+      # inquirer 14+ has breaking prompt changes; not all are TypeScript-
+      # detectable and may affect interactive init/merge flows.
+      - dependency-name: 'conf'
+      - dependency-name: 'inquirer'
