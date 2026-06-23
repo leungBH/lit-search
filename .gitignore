@@ -16,6 +16,10 @@ ENV/
 dist/
 build/
 
+# npm auth (never commit tokens)
+.npmrc
+
+
 # IDE
 .idea/
 .trae/
