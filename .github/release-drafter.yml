@@ -2,6 +2,7 @@ name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 # When a v* tag is pushed, promote the matching draft to a published
 # release instead of leaving it as a draft.
+publish: true
 tag:
   resolver: git
   include-pre-releases: false
