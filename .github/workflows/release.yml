@@ -64,6 +64,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
 
-      # The actual GitHub Release (with changelog grouped by PR labels)
-      # is created by release-drafter.yml, which watches for v* tag
-      # pushes and promotes its draft. See .github/release-drafter.yml.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # We are checked out on the v* tag, so ${{ github.ref_name }}
+          # is the tag (e.g. v1.4.7). softprops defaults to that.
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          # softprops refuses to overwrite an existing release, so this
+          # is safe to re-run after fixing the body.
