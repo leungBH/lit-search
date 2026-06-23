@@ -45,8 +45,8 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
-    "conf": "^12.0.0",
-    "inquirer": "^9.0.0"
+    "conf": "^15.1.0",
+    "inquirer": "^14.0.2"
   },
   "os": [
     "darwin",
