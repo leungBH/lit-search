@@ -1,0 +1,34 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+version-resolver:
+  major:
+    labels: ['breaking', 'major']
+  minor:
+    labels: ['feat', 'feature', 'enhancement', 'minor']
+  patch:
+    labels: ['fix', 'bug', 'patch', 'chore', 'docs', 'ci', 'refactor', 'perf', 'test']
+  default: patch
+
+categories:
+  - title: '🚨 Breaking changes'
+    labels: ['breaking', 'major']
+  - title: '🚀 Features'
+    labels: ['feat', 'feature', 'enhancement', 'minor']
+  - title: '🐛 Bug fixes'
+    labels: ['fix', 'bug', 'patch']
+  - title: '📦 Maintenance'
+    labels: ['chore', 'ci', 'refactor', 'perf', 'test']
+  - title: '📝 Documentation'
+    labels: ['docs']
+
+change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
+template: |
+  ## What changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+exclude-contributors:
+  - github-actions[bot]
+  - dependabot[bot]

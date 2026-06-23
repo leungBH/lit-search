@@ -376,6 +376,64 @@ LIT_SEARCH_SKIP_NETWORK_TESTS=1 node test.js
 node ./bin/lit-search.js "machine learning" -l 1 -s 2023 --output-dir ./temp
 ```
 
+## 如何发版
+
+本项目用 GitHub Actions + npm Automation Token 自动化发版。Token 只存在于 GitHub 仓库的 `NPM_TOKEN` secret 里，**永远不要把 token 写进代码或 commit**。
+
+### 一次性配置（仓库维护者）
+
+1. 去 https://www.npmjs.com/settings/&lt;your-username&gt;/tokens 生成一个 **Automation** 类型的 token：
+   - Packages 范围选 **Only select packages and scopes** → 勾上 `lit-search`
+   - Permissions 保持默认 **Read and publish**
+2. 去 https://github.com/leungBH/lit-search/settings/secrets/actions 添加 secret：
+   - Name：`NPM_TOKEN`（**必须这个大小写**）
+   - Value：粘贴上一步的 token
+
+### 日常发版流程
+
+```bash
+# 1) 改代码、提 PR、走 review
+git checkout -b feat/some-improvement
+git commit -m "feat: add some improvement"
+gh pr create --label "feat"
+
+# 2) 合并后，main 上的 CI 会自动跑测试
+git checkout main && git pull
+
+# 3) 升级版本号（自动改 package.json + package-lock.json + commit）
+npm version patch   # 1.4.4 → 1.4.5
+# 或 npm version minor
+# 或 npm version major
+
+# 4) 推 commit 和 tag
+git push origin main --follow-tags
+```
+
+`git push --follow-tags` 会把新 tag `v1.4.5` 推到 GitHub，触发 `release.yml`：
+
+1. 跑 `npm test`（测试挂了不发布）
+2. 校验 tag 版本号 = `package.json` 版本号
+3. `npm publish --access public` 发到 npm
+4. release-drafter 把已按 PR label 分组好的 changelog 转正成 GitHub Release
+
+### PR Label 约定
+
+为了让 release notes 自动按类别分组，PR 至少打一个 label：
+
+| Label | 在 changelog 里出现在 | 触发版本号 bump |
+|---|---|---|
+| `breaking` 或 `major` | 🚨 Breaking changes | major |
+| `feat`、`enhancement` | 🚀 Features | minor |
+| `fix`、`bug` | 🐛 Bug fixes | patch |
+| `chore`、`ci`、`refactor`、`perf`、`test` | 📦 Maintenance | patch |
+| `docs` | 📝 Documentation | — |
+
+如果 PR 没打 label，release-drafter 默认归为 patch。手动 `npm version` 时不受 label 影响。
+
+### 依赖更新
+
+`dependabot` 每周一 09:00（北京时间）自动检查 npm 依赖更新，PR 会带 `dependencies` 和 `npm` label。CLI 表面相关的包（`commander`、`chalk`）会忽略 major 升级。
+
 ## License
 
 MIT
