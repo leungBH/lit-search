@@ -82,8 +82,17 @@ function parseArgs(args) {
     } else if (arg === '--version' || arg === '-v') {
       console.log(packageJson.version);
       process.exit(0);
-    } else if (!arg.startsWith('-')) {
-      options.query = arg;
+    } else if (arg.startsWith('-') && arg.length > 1) {
+      // Looks like a flag we do not recognize. Reject it loudly so the
+      // user does not silently get an empty/garbled query.
+      console.error(chalk.red(`Unknown option: ${arg}`));
+      console.log('Run `lit-search --help` for the list of supported options.');
+      process.exit(1);
+    } else {
+      // Bare positional: collect it. If the user passes several unquoted
+      // words (e.g. `lit-search machine learning -l 5`) we join them
+      // with spaces so the query string is still meaningful.
+      options.query = options.query ? `${options.query} ${arg}` : arg;
     }
   }
 
@@ -215,14 +224,18 @@ async function main() {
     return;
   }
 
-  if (command && command.startsWith('-')) {
-    // Flags go straight to the search flow below.
-  } else if (command && !KNOWN_COMMANDS.has(command)) {
+  if (command && KNOWN_COMMANDS.has(command) === false &&
+      !command.startsWith('-') && typeof command !== 'string') {
+    // Defensive guard for non-string inputs (should not happen in practice).
     console.error(chalk.red(`Unknown subcommand: ${command}`));
     console.log('Available: init, merge, enrich, resolve, search (default), --help');
     console.log('Run `lit-search --help` for details.');
     process.exit(1);
   }
+  // For anything else (bare queries like `"machine learning"`,
+  // `transformer`, `"AI, coding, agent"`, or `search <query>`),
+  // fall through to the search flow below. `parseArgs` will pick up
+  // the first non-flag argument as the query.
 
   const options = parseArgs(command === 'search' ? args.slice(1) : args);
   if (!options.query) {
