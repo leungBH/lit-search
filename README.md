@@ -414,7 +414,7 @@ git push origin main --follow-tags
 1. 跑 `npm test`（测试挂了不发布）
 2. 校验 tag 版本号 = `package.json` 版本号
 3. `npm publish --access public` 发到 npm
-4. release-drafter 把已按 PR label 分组好的 changelog 转正成 GitHub Release
+4. release.yml 在 npm publish 成功后用 `softprops/action-gh-release` 创建 GitHub Release（`generate_release_notes: true` 由 GitHub 自动聚合 PR / commit 生成 changelog）
 
 ### PR Label 约定
 
