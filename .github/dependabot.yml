@@ -3,11 +3,8 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
-      # TEMP: daily so we can verify the new ignore list in one day.
-      # Revert to 'weekly' (next Monday 09:00 Asia/Shanghai) after
-      # confirming dependabot no longer proposes conf/inquirer
-      # upgrades.
-      interval: 'daily'
+      interval: 'weekly'
+      day: 'monday'
       time: '09:00'
       timezone: 'Asia/Shanghai'
     open-pull-requests-limit: 5
