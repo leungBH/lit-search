@@ -1,6 +1,6 @@
 // Tests for output rendering, normalization, and round-trip integrity.
 
-import { renderOutput } from '../../lib/output.js';
+import { renderBibTeX } from '../../lib/output.js';
 import { writeResultFiles, readLiteraturePool, resolvePoolPath } from '../../lib/output-files.js';
 import { normalizePdfCandidates } from '../../lib/pdf-candidates.js';
 import { suite, test, assertEqual, assertOk, assertMatch, assertFalsy, assertTruthy } from '../test-runner.js';
@@ -26,7 +26,7 @@ suite('BibTeX renderer: required fields', () => {
         }
       ]
     };
-    const bib = renderOutput(pool, 'bib');
+    const bib = renderBibTeX(pool);
     assertMatch(bib, /@article\{Smith2024,/);
     assertMatch(bib, /title = \{A Study on Machine Learning\}/);
     assertMatch(bib, /author = \{Alice Smith and Bob Lee\}/);
@@ -52,7 +52,7 @@ suite('BibTeX renderer: required fields', () => {
         }
       ]
     };
-    const bib = renderOutput(pool, 'bib');
+    const bib = renderBibTeX(pool);
     assertFalsy(bib.match(/pdfurl/i), 'pdfurl should not leak');
     assertFalsy(bib.match(/pdf_candidates/i), 'pdf_candidates should not leak');
     assertFalsy(bib.match(/citationcount/i), 'citationcount should not leak');
@@ -65,14 +65,14 @@ suite('BibTeX renderer: required fields', () => {
         seq_id: 1, citation_key: 'X', title: 'A & B: {the test}', author: 'A', year: 2020
       }]
     };
-    const bib = renderOutput(pool, 'bib');
+    const bib = renderBibTeX(pool);
     // BibTeX must escape & as \& or wrap in braces
     assertTruthy(bib.includes('A') && bib.includes('B'), 'title fragments should be present');
   });
 
   test('empty pool renders header only', () => {
     const pool = { metadata: {}, papers: [] };
-    const bib = renderOutput(pool, 'bib');
+    const bib = renderBibTeX(pool);
     assertMatch(bib, /^% lit-search references/m);
     assertFalsy(bib.match(/@\w+\{/));
   });
@@ -94,7 +94,7 @@ suite('BibTeX renderer: required fields', () => {
         }
       ]
     };
-    const bib = renderOutput(pool, 'bib');
+    const bib = renderBibTeX(pool);
     assertMatch(bib, /eprint = \{1706\.03762\}/);
     assertMatch(bib, /archivePrefix = \{arXiv\}/);
   });

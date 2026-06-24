@@ -23,7 +23,6 @@ const C = {
 const suites = [];
 let currentSuite = null;
 let currentBeforeEach = null;
-let totalAssertions = 0;
 
 export function suite(name, fn) {
   if (currentSuite) {
@@ -121,21 +120,18 @@ export async function runSuites({ filter = '', skipNetwork = false } = {}) {
 }
 
 export function assertEqual(actual, expected, message) {
-  totalAssertions++;
   if (!deepEqual(actual, expected)) {
     throw new Error(message || `assertEqual failed\n  expected: ${format(expected)}\n  actual:   ${format(actual)}`);
   }
 }
 
 export function assertDeepEqual(actual, expected, message) {
-  totalAssertions++;
   if (!deepEqual(actual, expected)) {
     throw new Error(message || `assertDeepEqual failed\n  expected: ${format(expected)}\n  actual:   ${format(actual)}`);
   }
 }
 
 export function assertMatch(value, pattern, message) {
-  totalAssertions++;
   if (typeof pattern === 'string') {
     if (!String(value).includes(pattern)) {
       throw new Error(message || `assertMatch: "${pattern}" not found in\n  ${value}`);
@@ -146,29 +142,24 @@ export function assertMatch(value, pattern, message) {
 }
 
 export function assertNotMatch(value, pattern, message) {
-  totalAssertions++;
   if (pattern.test(String(value))) {
     throw new Error(message || `assertNotMatch: ${pattern} should not match\n  ${value}`);
   }
 }
 
 export function assertTruthy(value, message) {
-  totalAssertions++;
   if (!value) throw new Error(message || `assertTruthy failed: ${format(value)}`);
 }
 
 export function assertFalsy(value, message) {
-  totalAssertions++;
   if (value) throw new Error(message || `assertFalsy failed: ${format(value)}`);
 }
 
 export function assertOk(condition, message) {
-  totalAssertions++;
   if (!condition) throw new Error(message || 'assertOk failed');
 }
 
 export function assertThrows(fn, matcher, message) {
-  totalAssertions++;
   let thrown;
   try { fn(); } catch (e) { thrown = e; }
   if (!thrown) throw new Error(message || 'assertThrows: no error was thrown');
@@ -178,7 +169,6 @@ export function assertThrows(fn, matcher, message) {
 }
 
 export function assertRejects(asyncFn, matcher, message) {
-  totalAssertions++;
   return Promise.resolve()
     .then(() => asyncFn())
     .then(

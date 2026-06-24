@@ -292,7 +292,10 @@ lit-search resolve ./citations.txt --output-dir ./resolved
 启动命令：
 
 ```bash
-node D:/lit-search/bin/lit-search-mcp.js
+# 安装到全局 / 作为依赖时
+npx lit-search-mcp
+# 或者直接跑源码
+node ./bin/lit-search-mcp.js
 ```
 
 MCP 工具：
@@ -366,9 +369,18 @@ cwd = "D:/lit-search"
 
 ```bash
 npm install
-npm test
-LIT_SEARCH_SKIP_NETWORK_TESTS=1 node test.js
+npm test                                  # 离线单元测试（不连外网）
+npm run test:integration                  # 端到端验收：CLI + MCP + 真实 API
+LIT_SEARCH_SKIP_NETWORK_TESTS=1 node test.js   # 想跳过 network case 时
 ```
+
+- `npm test` 跑 [tests/run.js](file:///d:/code/lit-search/tests/run.js) 入口，离线、秒级，CI 每次 push / PR 必跑。
+- `npm run test:integration` 跑 [test.js](file:///d:/code/lit-search/test.js)，会**真打 OpenAlex / CrossRef / Semantic Scholar / arXiv 等**。本地无 key 时大多会 429/被拒，所以默认不在 CI 跑。
+- 真实 API key 可以从 `LIT_SEARCH_S2_API_KEY` 等环境变量读，也可以放到 `temp/local-secrets/key.json`（已 gitignore）：
+  ```json
+  { "s2": "...", "openalex": "...", "crossrefMailto": "you@example.com", "core": "..." }
+  ```
+  字段名和 `test.js` 里的 `loadKeyEnv()` 一一对应；少哪个就跳过哪个。
 
 真实接口验收：
 

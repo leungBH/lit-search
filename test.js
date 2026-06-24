@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import chalk from 'chalk';
-import { renderOutput } from './lib/output.js';
+import { renderBibTeX } from './lib/output.js';
 import { writeResultFiles } from './lib/output-files.js';
 import { normalizePdfCandidates } from './lib/pdf-candidates.js';
 import { enrichMetadataInPool } from './lib/metadata-enricher.js';
@@ -99,7 +99,7 @@ function testCliHelp() {
 
 function testBibTeXRenderer() {
   const fixture = buildFixturePool();
-  const bib = renderOutput(fixture, 'bib');
+  const bib = renderBibTeX(fixture);
 
   assert.match(bib, /^% lit-search references/m);
   assert.match(bib, /@article\{Smith2024_1,/);
@@ -172,7 +172,7 @@ async function testPublicationResolution() {
   assert.equal(resolved.preprint.arxiv_id, '1706.03762');
   assert.equal(resolved.identity.arxiv_id, '1706.03762');
 
-  const bib = renderOutput({ metadata: {}, papers: [resolved] }, 'bib');
+  const bib = renderBibTeX({ metadata: {}, papers: [resolved] });
   assert.match(bib, /doi = \{10\.5555\/3295222\.3295349\}/);
   assert.match(bib, /journal = \{Advances in Neural Information Processing Systems\}/);
   assert.match(bib, /pages = \{5998-6008\}/);
