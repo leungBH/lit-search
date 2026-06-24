@@ -305,7 +305,47 @@ search_literature
 merge_pools
 enrich_metadata
 resolve_citations
+get_paper
 ```
+
+`get_paper` 用于单点论文查询（DOI 或 title），适合 LLM 拿到 DOI/标题后直接拿元数据：
+
+```json
+{
+  "doi": "10.1145/3411764.3445105"
+}
+```
+
+或：
+
+```json
+{
+  "title": "Attention is all you need"
+}
+```
+
+可选参数 `sources` 覆盖默认源列表。默认情况下 DOI 查询会同时访问 `openalex + semantic-scholar + crossref`，title 查询会访问 `openalex + semantic-scholar + arxiv`。
+
+所有工具失败时返回结构化错误，LLM 可直接消费：
+
+```json
+{
+  "isError": true,
+  "structuredContent": {
+    "ok": false,
+    "error": {
+      "code": "NOT_FOUND",
+      "message": "Paper not found in any source for doi: 10.1/x",
+      "retryable": false,
+      "inputType": "doi",
+      "target": "10.1/x",
+      "sources": ["openalex", "semantic-scholar", "crossref"]
+    }
+  }
+}
+```
+
+错误码：`INVALID_INPUT`、`MISSING_REQUIRED`、`NOT_FOUND`、`RATE_LIMITED`、`TIMEOUT`、`NETWORK_ERROR`、`SOURCE_ERROR`、`ALL_SOURCES_FAILED`、`CANCELLED`、`AUTH_REQUIRED`、`INTERNAL_ERROR`。`retryable=true` 的错误表示 LLM 应该重试（如 429、5xx、网络抖动）。
 
 `search_literature` 每次调用都会创建结果文件夹，并返回：
 

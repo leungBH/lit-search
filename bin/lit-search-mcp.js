@@ -10,6 +10,8 @@ import { runLitSearchWorkflow } from '../lib/workflow.js';
 import { enrichMetadata, mergePools, resolveCitationsFile } from '../lib/pool-ops.js';
 import { createAppConfig, getResolvedApiKeys } from '../lib/app-config.js';
 import { silentLogger } from '../lib/logger.js';
+import { lookupPaper } from '../lib/paper-lookup.js';
+import { wrapError } from '../lib/errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -273,6 +275,50 @@ server.registerTool(
   }
 );
 
+server.registerTool(
+  'get_paper',
+  {
+    title: 'Get Paper by DOI or Title',
+    description: [
+      'Look up a single paper by DOI or title across multiple sources.',
+      'Provide exactly one of: doi (e.g. "10.1145/abc" or full https://doi.org/... URL) or title.',
+      'Returns normalized metadata: title, authors, venue, year, abstract, DOI, citation count, references.',
+      'Default sources: openalex + semantic-scholar + crossref for DOI, openalex + semantic-scholar + arxiv for title.',
+      'On NOT_FOUND, returns a structured error listing which sources were tried and any non-404 failures.'
+    ].join(' '),
+    inputSchema: {
+      doi: z.string().optional().describe('Paper DOI. Accepts bare DOI, doi.org URL, or trailing punctuation.'),
+      title: z.string().optional().describe('Paper title. Used for fuzzy title lookup against the source.'),
+      sources: z.array(z.enum(['openalex', 'semantic-scholar', 'crossref', 'arxiv'])).optional()
+        .describe('Override the default source list. arXiv is only valid with title (it cannot resolve a DOI).'),
+      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata. Default false.'),
+      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata. Implies resolvePreprint. Default false.')
+    }
+  },
+  async args => {
+    logDebug(`tool get_paper args=${JSON.stringify(args)}`);
+    try {
+      const result = await lookupPaper({
+        doi: args.doi,
+        title: args.title,
+        sources: args.sources,
+        apiKeys: getResolvedApiKeys(config)
+      });
+      return {
+        content: [{ type: 'text', text: formatPaperSummary(result.paper) }],
+        structuredContent: {
+          ok: true,
+          paper: result.paper,
+          sources: result.sources,
+          failures: result.failures
+        }
+      };
+    } catch (err) {
+      return mcpErrorResponse(wrapError(err));
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 transport.onerror = error => {
   logDebug(`transport error: ${error.stack || error.message}`);
@@ -352,6 +398,41 @@ function buildMcpOutputSummary(workflow) {
     'Use search_meta.json to reproduce the search, literature_pool.json for complete machine-readable results, and references.bib for LaTeX/reference-manager import.',
     'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.'
   ].join('\n');
+}
+
+function formatPaperSummary(paper) {
+  if (!paper) return 'No paper data.';
+  const authorList = (paper.authors || []).slice(0, 5).join(', ');
+  const moreAuthors = (paper.authors || []).length > 5 ? `, +${paper.authors.length - 5} more` : '';
+  return [
+    paper.title ? `Title: ${paper.title}` : 'Title: (unknown)',
+    authorList ? `Authors: ${authorList}${moreAuthors}` : null,
+    paper.year ? `Year: ${paper.year}` : null,
+    paper.venue ? `Venue: ${paper.venue}` : null,
+    paper.doi ? `DOI: ${paper.doi}` : null,
+    typeof paper.citationCount === 'number' ? `Citations: ${paper.citationCount}` : null,
+    paper.url ? `URL: ${paper.url}` : null,
+    paper.abstract ? `\nAbstract: ${paper.abstract}` : null
+  ].filter(Boolean).join('\n');
+}
+
+function mcpErrorResponse(err) {
+  const code = err && err.code ? err.code : 'INTERNAL_ERROR';
+  const message = err && err.message ? err.message : 'Unknown error';
+  const retryable = Boolean(err && err.retryable);
+  const details = err && err.details ? err.details : {};
+  logDebug(`tool error code=${code} message=${message} retryable=${retryable}`);
+  return {
+    isError: true,
+    content: [{
+      type: 'text',
+      text: `[${code}] ${message}${retryable ? ' (retryable)' : ''}`
+    }],
+    structuredContent: {
+      ok: false,
+      error: { code, message, retryable, ...details }
+    }
+  };
 }
 
 function logDebug(message) {
