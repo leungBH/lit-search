@@ -1,8 +1,10 @@
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
-# When a v* tag is pushed, promote the matching draft to a published
-# release instead of leaving it as a draft.
-publish: true
+# release-drafter no longer publishes the GitHub Release. The
+# release.yml workflow calls `softprops/action-gh-release` after a
+# successful npm publish, which gives us a deterministic
+# `generate_release_notes: true` body. release-drafter here is
+# only responsible for the "Next Release" draft on main.
 tag:
   resolver: git
   include-pre-releases: false

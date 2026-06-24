@@ -416,11 +416,13 @@ git push origin main --follow-tags
 3. `npm publish --access public` 发到 npm
 4. release.yml 在 npm publish 成功后用 `softprops/action-gh-release` 创建 GitHub Release（`generate_release_notes: true` 由 GitHub 自动聚合 PR / commit 生成 changelog）
 
+注意：GitHub 自动生成的 changelog **不按 PR label 分组**——它是一份按时间倒序的 commit / author 列表。release-drafter 仍然在 main 上维护一份 "Next Release" 草稿并按 label 分组，但那条草稿只在带 label 的 PR 合到 main 后才会被 release.yml 引用。当前发布流程以 GitHub 自动 changelog 为准。
+
 ### PR Label 约定
 
-为了让 release notes 自动按类别分组，PR 至少打一个 label：
+如果想用 release-drafter 维护的"Next Release"草稿视图（按 label 分组），给 PR 打一个 label：
 
-| Label | 在 changelog 里出现在 | 触发版本号 bump |
+| Label | 在草稿 changelog 里出现在 | 触发版本号 bump |
 |---|---|---|
 | `breaking` 或 `major` | 🚨 Breaking changes | major |
 | `feat`、`enhancement` | 🚀 Features | minor |
@@ -432,9 +434,11 @@ git push origin main --follow-tags
 
 ### 依赖更新
 
-`dependabot` 每周一 09:00（北京时间）自动检查 npm 依赖更新，PR 会带 `dependencies` 和 `npm` label，按 `production-dependencies` / `development-dependencies` 分组。
+`dependabot` 每周一 09:00（北京时间）自动检查 npm 依赖更新，PR 会带 `dependencies` 和 `npm` label。
 
-CLI 表面相关的包（`commander`、`chalk`）会忽略 major 升级。`conf` 和 `inquirer` 当前在 ignore 列表里（`conf 14+` 要求 Node 20，超越本项目 `engines: >=18`；`inquirer 14+` 有破坏性 prompt 变化），需要升级时手动提 PR。
+CLI 表面相关的包（`commander`、`chalk`）会忽略 major 升级。`conf` 和 `inquirer` **完全忽略**任何升级（`conf 14+` 要求 Node 20，超越本项目 `engines: >=18`；`inquirer 14+` 有破坏性 prompt 变化，会让 `init` 子命令静默挂掉），需要升级时手动提 PR。
+
+⚠️ 我们**不**用 dependabot 的 `groups` 字段。`groups` 会**重新激活** `ignore` 列表里被点名要忽略的包，曾经导致 `conf` / `inquirer` 的不安全升级被自动提了 PR。修改 `.github/dependabot.yml` 时请保持这个约束。
 
 ## License
 

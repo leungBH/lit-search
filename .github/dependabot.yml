@@ -8,26 +8,28 @@ updates:
       time: '09:00'
       timezone: 'Asia/Shanghai'
     open-pull-requests-limit: 5
+    # Use a simple 'chore' prefix. Without this, dependabot appends
+    # the group name as a scope and we end up with double (deps).
     commit-message:
-      prefix: 'chore(deps)'
+      prefix: 'chore'
     labels:
       - 'dependencies'
       - 'npm'
-    groups:
-      production-dependencies:
-        dependency-type: 'production'
-      development-dependencies:
-        dependency-type: 'development'
+    # NOTE: We do NOT use `groups` here. Dependabot's `groups` block
+    # re-enables dependencies that are listed in `ignore`, which
+    # broke our `conf` / `inquirer` blocklist and produced an unsafe
+    # PR. The flat `ignore` list below is the single source of truth.
     ignore:
-      # These are CLI surface libraries. Major bumps may break argument
-      # parsing / output rendering. They require an explicit PR with
-      # a migration note.
+      # CLI surface libraries. Major bumps may break argument parsing
+      # or terminal output rendering. They require an explicit PR
+      # with a migration note.
       - dependency-name: 'commander'
         update-types: ['version-update:semver-major']
       - dependency-name: 'chalk'
         update-types: ['version-update:semver-major']
-      # conf 14+ requires Node 20; project's engines is ">=18".
-      # inquirer 14+ has breaking prompt changes; not all are TypeScript-
-      # detectable and may affect interactive init/merge flows.
+      # conf 14+ requires Node 20; the project's `engines` is ">=18".
+      # inquirer 14+ has breaking prompt changes; not all are caught
+      # by type checking and they would silently break the `init`
+      # command. Upgrade these in a dedicated PR after manual review.
       - dependency-name: 'conf'
       - dependency-name: 'inquirer'
