@@ -1,6 +1,6 @@
 {
   "name": "lit-search",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Academic literature search CLI and MCP server for Semantic Scholar, OpenAlex, arXiv, CrossRef, CORE, Europe PMC, DBLP, and DOAJ. Outputs reproducible metadata JSON, literature pool JSON, and BibTeX. MCP tools: search_literature, get_paper, resolve_citations, enrich_metadata, merge_pools.",
   "keywords": [
     "literature",
