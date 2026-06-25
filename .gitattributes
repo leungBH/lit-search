@@ -1,0 +1,5 @@
+# Ensure consistent line endings across platforms. This is a Node.js project
+# that runs on Linux CI; LF is the canonical encoding. Without this file,
+# Windows machines with `core.autocrlf=true` will silently rewrite line
+# endings, which produces noisy diffs in cross-platform PRs.
+* text=auto eol=lf

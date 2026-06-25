@@ -18,14 +18,17 @@ const __dirname = dirname(__filename);
 const packageRoot = join(__dirname, '..');
 const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'));
 const config = createAppConfig();
-const debugLogFile = process.env.LIT_SEARCH_MCP_DEBUG_FILE ||
+const debugLogFile =
+  process.env.LIT_SEARCH_MCP_DEBUG_FILE ||
   (process.env.LIT_SEARCH_MCP_DEBUG === '1' ? join(packageRoot, 'temp', 'mcp-debug.log') : null);
 
-logDebug(`startup sdk node=${process.version} cwd=${process.cwd()} argv=${JSON.stringify(process.argv)}`);
+logDebug(
+  `startup sdk node=${process.version} cwd=${process.cwd()} argv=${JSON.stringify(process.argv)}`
+);
 
 const server = new McpServer({
   name: 'lit-search-mcp',
-  version: packageJson.version
+  version: packageJson.version,
 });
 
 server.registerTool(
@@ -43,23 +46,52 @@ server.registerTool(
       'Use comma-separated query text such as "ontology, knowledge graph, semantic web".',
       'Do not send a long space-separated bag of concepts such as "ontology knowledge graph semantic web"; that is interpreted as one phrase and may over-filter results.',
       'Use resolvePreprint and preferPublished when citations should prefer formal publication metadata over arXiv preprint metadata.',
-      'Use outputDir to choose the parent directory where the generated result folder will be created.'
+      'Use outputDir to choose the parent directory where the generated result folder will be created.',
     ].join(' '),
     inputSchema: {
-      query: z.string().min(1).describe('Search query. For multiple concepts, prefer comma-separated terms, e.g. "ontology, knowledge graph, semantic web".'),
+      query: z
+        .string()
+        .min(1)
+        .describe(
+          'Search query. For multiple concepts, prefer comma-separated terms, e.g. "ontology, knowledge graph, semantic web".'
+        ),
       limit: z.number().optional().describe('Per-keyword, per-source retrieval limit. Default: 3.'),
       yearStart: z.number().optional().describe('Inclusive start year.'),
       yearEnd: z.number().optional().describe('Inclusive end year.'),
-      queryExpansion: z.enum(['none', 'pairwise', 'full']).optional().describe('Query expansion strategy. Default none.'),
-      searchScope: z.enum(['title-only', 'title-abstract', 'default-engine-search']).optional().describe('Search scope strategy. Default default-engine-search.'),
-      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),
-      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'),
-      withPubMed: z.boolean().optional().describe('Enable optional PubMed/NCBI search for this call. Default false.'),
-      withOpenCitations: z.boolean().optional().describe('Enable optional OpenCitations DOI relation enrichment for this call. Default false.'),
-      outputDir: z.string().optional().describe('Parent directory for generated result folders.')
-    }
+      queryExpansion: z
+        .enum(['none', 'pairwise', 'full'])
+        .optional()
+        .describe('Query expansion strategy. Default none.'),
+      searchScope: z
+        .enum(['title-only', 'title-abstract', 'default-engine-search'])
+        .optional()
+        .describe('Search scope strategy. Default default-engine-search.'),
+      resolvePreprint: z
+        .boolean()
+        .optional()
+        .describe(
+          'Resolve arXiv preprints to formal publication metadata when possible. Default false.'
+        ),
+      preferPublished: z
+        .boolean()
+        .optional()
+        .describe(
+          'Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'
+        ),
+      withPubMed: z
+        .boolean()
+        .optional()
+        .describe('Enable optional PubMed/NCBI search for this call. Default false.'),
+      withOpenCitations: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable optional OpenCitations DOI relation enrichment for this call. Default false.'
+        ),
+      outputDir: z.string().optional().describe('Parent directory for generated result folders.'),
+    },
   },
-  async args => {
+  async (args) => {
     logDebug(`tool search_literature args=${JSON.stringify(args)}`);
     const agentGuidance = buildAgentGuidance(args.query);
     const workflow = await runLitSearchWorkflow({
@@ -70,13 +102,17 @@ server.registerTool(
       yearEnd: normalizeOptionalNumber(args.yearEnd),
       limit: normalizeOptionalNumber(args.limit) || 3,
       queryExpansion: normalizeEnum(args.queryExpansion, ['none', 'pairwise', 'full'], 'none'),
-      searchScope: normalizeEnum(args.searchScope, ['title-only', 'title-abstract', 'default-engine-search'], 'default-engine-search'),
+      searchScope: normalizeEnum(
+        args.searchScope,
+        ['title-only', 'title-abstract', 'default-engine-search'],
+        'default-engine-search'
+      ),
       resolvePreprint: args.resolvePreprint === true || args.preferPublished === true,
       preferPublished: args.preferPublished === true,
       apiKeys: getResolvedApiKeys(config),
       engines: buildRuntimeEngines(args),
       logger: silentLogger,
-      outputBaseDir: args.outputDir || process.cwd()
+      outputBaseDir: args.outputDir || process.cwd(),
     });
 
     workflow.result.metadata.agentGuidance = agentGuidance;
@@ -86,17 +122,17 @@ server.registerTool(
       content: [
         {
           type: 'text',
-          text: buildMcpOutputSummary(workflow)
+          text: buildMcpOutputSummary(workflow),
         },
         {
           type: 'text',
-          text: workflow.bibtex
-        }
+          text: workflow.bibtex,
+        },
       ],
       structuredContent: {
         ...workflow.result,
-        output: workflow.output
-      }
+        output: workflow.output,
+      },
     };
   }
 );
@@ -109,17 +145,35 @@ server.registerTool(
       'Merge multiple lit-search literature pools into one deduplicated pool.',
       'Inputs can be result folders or literature_pool.json files.',
       'Merging writes search_meta.json, literature_pool.json, and references.bib into outputDir.',
-      'Use resolvePreprint and preferPublished when merged citation exports should prefer formal publication metadata.'
+      'Use resolvePreprint and preferPublished when merged citation exports should prefer formal publication metadata.',
     ].join(' '),
     inputSchema: {
       inputs: z.array(z.string().min(1)).min(1).describe('Pool paths to merge.'),
-      outputDir: z.string().optional().describe('Directory for the merged pool. Default: ./merged_literature.'),
-      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),
-      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'),
-      withOpenCitations: z.boolean().optional().describe('Enable optional OpenCitations DOI relation enrichment while merging. Default false.')
-    }
+      outputDir: z
+        .string()
+        .optional()
+        .describe('Directory for the merged pool. Default: ./merged_literature.'),
+      resolvePreprint: z
+        .boolean()
+        .optional()
+        .describe(
+          'Resolve arXiv preprints to formal publication metadata when possible. Default false.'
+        ),
+      preferPublished: z
+        .boolean()
+        .optional()
+        .describe(
+          'Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'
+        ),
+      withOpenCitations: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable optional OpenCitations DOI relation enrichment while merging. Default false.'
+        ),
+    },
   },
-  async args => {
+  async (args) => {
     logDebug(`tool merge_pools args=${JSON.stringify(args)}`);
     const outputDir = resolve(args.outputDir || 'merged_literature');
     const result = await mergePools(args.inputs, outputDir, {
@@ -127,7 +181,7 @@ server.registerTool(
       preferPublished: args.preferPublished === true,
       apiKeys: getResolvedApiKeys(config),
       logger: silentLogger,
-      engines: buildRuntimeEngines(args)
+      engines: buildRuntimeEngines(args),
     });
 
     return {
@@ -141,14 +195,14 @@ server.registerTool(
             `Papers: ${result.pool.papers.length}`,
             `Search metadata: ${result.files.metaFile}`,
             `Literature pool: ${result.files.poolJsonFile}`,
-            `BibTeX: ${result.files.bibFile}`
-          ].join('\n')
-        }
+            `BibTeX: ${result.files.bibFile}`,
+          ].join('\n'),
+        },
       ],
       structuredContent: {
         ...result.pool,
-        output: buildOutputObject(outputDir, result.files)
-      }
+        output: buildOutputObject(outputDir, result.files),
+      },
     };
   }
 );
@@ -163,18 +217,35 @@ server.registerTool(
       'It looks up missing fields by arXiv ID, DOI via OpenAlex and Semantic Scholar, source IDs, then title fallback.',
       'It rewrites search_meta.json, literature_pool.json, and references.bib in place.',
       'For agent workflows that only need abstracts, call with fields="abstract", onlyMissing=true, concurrency=1, and checkpointInterval=5.',
-      'Do not run multiple enrich_metadata calls in parallel for the same pool.'
+      'Do not run multiple enrich_metadata calls in parallel for the same pool.',
     ].join(' '),
     inputSchema: {
-      poolPath: z.string().min(1).describe('Path to a lit-search result folder or literature_pool.json file.'),
-      fields: z.string().optional().describe('Comma-separated fields to enrich. Default: all supported metadata fields.'),
+      poolPath: z
+        .string()
+        .min(1)
+        .describe('Path to a lit-search result folder or literature_pool.json file.'),
+      fields: z
+        .string()
+        .optional()
+        .describe('Comma-separated fields to enrich. Default: all supported metadata fields.'),
       onlyMissing: z.boolean().optional().describe('Only fill missing requested fields.'),
-      checkpointInterval: z.number().optional().describe('Save progress every n processed papers. Default: 5. Use 0 to disable checkpoint writes.'),
-      concurrency: z.number().optional().describe('Paper-level enrichment concurrency. Default: 1.'),
-      overwrite: z.boolean().optional().describe('Whether to refresh existing metadata too. Default false.')
-    }
+      checkpointInterval: z
+        .number()
+        .optional()
+        .describe(
+          'Save progress every n processed papers. Default: 5. Use 0 to disable checkpoint writes.'
+        ),
+      concurrency: z
+        .number()
+        .optional()
+        .describe('Paper-level enrichment concurrency. Default: 1.'),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe('Whether to refresh existing metadata too. Default false.'),
+    },
   },
-  async args => {
+  async (args) => {
     logDebug(`tool enrich_metadata args=${JSON.stringify(args)}`);
     const result = await enrichMetadata(args.poolPath, {
       overwrite: args.overwrite === true,
@@ -183,7 +254,7 @@ server.registerTool(
       checkpointInterval: normalizeOptionalNumber(args.checkpointInterval) ?? 5,
       concurrency: normalizeOptionalNumber(args.concurrency) ?? 1,
       apiKeys: getResolvedApiKeys(config),
-      logger: silentLogger
+      logger: silentLogger,
     });
 
     return {
@@ -205,15 +276,15 @@ server.registerTool(
             `Lookup failed: ${result.stats.lookupFailed}`,
             `Search metadata: ${result.files.metaFile}`,
             `Literature pool: ${result.files.poolJsonFile}`,
-            `BibTeX: ${result.files.bibFile}`
-          ].join('\n')
-        }
+            `BibTeX: ${result.files.bibFile}`,
+          ].join('\n'),
+        },
       ],
       structuredContent: {
         ...result.pool,
         output: buildOutputObject(result.outputDir, result.files),
-        metadataSummary: result.stats
-      }
+        metadataSummary: result.stats,
+      },
     };
   }
 );
@@ -225,19 +296,43 @@ server.registerTool(
     description: [
       'Resolve concrete citation strings from a text file into a lit-search literature pool.',
       'Use this when the user has references copied from a paper rather than broad keywords.',
-      'The result folder contains search_meta.json, literature_pool.json, and references.bib.'
+      'The result folder contains search_meta.json, literature_pool.json, and references.bib.',
     ].join(' '),
     inputSchema: {
-      citationsFile: z.string().min(1).describe('Path to a UTF-8 text file with one citation per line. Supports: bare title, "1. title", "[1] title", "10.xxxx/yyyy" DOI, or BibTeX entries.'),
-      outputDir: z.string().optional().describe('Directory for the resolved literature pool. Default: ./resolved_literature.'),
+      citationsFile: z
+        .string()
+        .min(1)
+        .describe(
+          'Path to a UTF-8 text file with one citation per line. Supports: bare title, "1. title", "[1] title", "10.xxxx/yyyy" DOI, or BibTeX entries.'
+        ),
+      outputDir: z
+        .string()
+        .optional()
+        .describe('Directory for the resolved literature pool. Default: ./resolved_literature.'),
       limit: z.number().optional().describe('Per-citation lookup limit. Default: 3.'),
-      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata when possible. Default false.'),
-      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'),
-      withPubMed: z.boolean().optional().describe('Enable optional PubMed/NCBI search for citation resolving. Default false.'),
-      withOpenCitations: z.boolean().optional().describe('Enable optional OpenCitations DOI relation enrichment. Default false.')
-    }
+      resolvePreprint: z
+        .boolean()
+        .optional()
+        .describe(
+          'Resolve arXiv preprints to formal publication metadata when possible. Default false.'
+        ),
+      preferPublished: z
+        .boolean()
+        .optional()
+        .describe(
+          'Prefer formal publication metadata for top-level citation fields and BibTeX. Implies resolvePreprint. Default false.'
+        ),
+      withPubMed: z
+        .boolean()
+        .optional()
+        .describe('Enable optional PubMed/NCBI search for citation resolving. Default false.'),
+      withOpenCitations: z
+        .boolean()
+        .optional()
+        .describe('Enable optional OpenCitations DOI relation enrichment. Default false.'),
+    },
   },
-  async args => {
+  async (args) => {
     logDebug(`tool resolve_citations args=${JSON.stringify(args)}`);
     const outputDir = resolve(args.outputDir || 'resolved_literature');
     const result = await resolveCitationsFile(args.citationsFile, {
@@ -247,7 +342,7 @@ server.registerTool(
       engines: buildRuntimeEngines(args),
       logger: silentLogger,
       resolvePreprint: args.resolvePreprint === true || args.preferPublished === true,
-      preferPublished: args.preferPublished === true
+      preferPublished: args.preferPublished === true,
     });
 
     return {
@@ -262,15 +357,15 @@ server.registerTool(
             `Unresolved: ${result.unresolved.length}`,
             `Search metadata: ${result.files.metaFile}`,
             `Literature pool: ${result.files.poolJsonFile}`,
-            `BibTeX: ${result.files.bibFile}`
-          ].join('\n')
-        }
+            `BibTeX: ${result.files.bibFile}`,
+          ].join('\n'),
+        },
       ],
       structuredContent: {
         ...result.pool,
         output: buildOutputObject(outputDir, result.files),
-        unresolved: result.unresolved
-      }
+        unresolved: result.unresolved,
+      },
     };
   }
 );
@@ -284,25 +379,41 @@ server.registerTool(
       'Provide exactly one of: doi (e.g. "10.1145/abc" or full https://doi.org/... URL) or title.',
       'Returns normalized metadata: title, authors, venue, year, abstract, DOI, citation count, references.',
       'Default sources: openalex + semantic-scholar + crossref for DOI, openalex + semantic-scholar + arxiv for title.',
-      'On NOT_FOUND, returns a structured error listing which sources were tried and any non-404 failures.'
+      'On NOT_FOUND, returns a structured error listing which sources were tried and any non-404 failures.',
     ].join(' '),
     inputSchema: {
-      doi: z.string().optional().describe('Paper DOI. Accepts bare DOI, doi.org URL, or trailing punctuation.'),
-      title: z.string().optional().describe('Paper title. Used for fuzzy title lookup against the source.'),
-      sources: z.array(z.enum(['openalex', 'semantic-scholar', 'crossref', 'arxiv'])).optional()
-        .describe('Override the default source list. arXiv is only valid with title (it cannot resolve a DOI).'),
-      resolvePreprint: z.boolean().optional().describe('Resolve arXiv preprints to formal publication metadata. Default false.'),
-      preferPublished: z.boolean().optional().describe('Prefer formal publication metadata. Implies resolvePreprint. Default false.')
-    }
+      doi: z
+        .string()
+        .optional()
+        .describe('Paper DOI. Accepts bare DOI, doi.org URL, or trailing punctuation.'),
+      title: z
+        .string()
+        .optional()
+        .describe('Paper title. Used for fuzzy title lookup against the source.'),
+      sources: z
+        .array(z.enum(['openalex', 'semantic-scholar', 'crossref', 'arxiv']))
+        .optional()
+        .describe(
+          'Override the default source list. arXiv is only valid with title (it cannot resolve a DOI).'
+        ),
+      resolvePreprint: z
+        .boolean()
+        .optional()
+        .describe('Resolve arXiv preprints to formal publication metadata. Default false.'),
+      preferPublished: z
+        .boolean()
+        .optional()
+        .describe('Prefer formal publication metadata. Implies resolvePreprint. Default false.'),
+    },
   },
-  async args => {
+  async (args) => {
     logDebug(`tool get_paper args=${JSON.stringify(args)}`);
     try {
       const result = await lookupPaper({
         doi: args.doi,
         title: args.title,
         sources: args.sources,
-        apiKeys: getResolvedApiKeys(config)
+        apiKeys: getResolvedApiKeys(config),
       });
       return {
         content: [{ type: 'text', text: formatPaperSummary(result.paper) }],
@@ -310,8 +421,8 @@ server.registerTool(
           ok: true,
           paper: result.paper,
           sources: result.sources,
-          failures: result.failures
-        }
+          failures: result.failures,
+        },
       };
     } catch (err) {
       return mcpErrorResponse(wrapError(err));
@@ -320,7 +431,7 @@ server.registerTool(
 );
 
 const transport = new StdioServerTransport();
-transport.onerror = error => {
+transport.onerror = (error) => {
   logDebug(`transport error: ${error.stack || error.message}`);
 };
 transport.onclose = () => {
@@ -345,7 +456,7 @@ function buildRuntimeEngines(args = {}) {
   return {
     ...(config.get('engines') || {}),
     ...(args.withPubMed === true ? { pubmed: true } : {}),
-    ...(args.withOpenCitations === true ? { openCitations: true } : {})
+    ...(args.withOpenCitations === true ? { openCitations: true } : {}),
   };
 }
 
@@ -359,7 +470,7 @@ function buildAgentGuidance(query) {
     originalQuery,
     warning: looksLikeLongConceptBag
       ? 'This query looks like several concepts written as one phrase. For multiple keywords, call this MCP tool with comma-separated query text, e.g. query="ontology, knowledge graph, semantic web".'
-      : null
+      : null,
   };
 }
 
@@ -372,20 +483,22 @@ function buildOutputObject(outputDir, files) {
     files: [
       { type: 'json', role: 'search_metadata', path: files.metaFile },
       { type: 'json', role: 'literature_pool', path: files.poolJsonFile },
-      { type: 'bibtex', role: 'citation_export', path: files.bibFile }
-    ]
+      { type: 'bibtex', role: 'citation_export', path: files.bibFile },
+    ],
   };
 }
 
 function buildMcpOutputSummary(workflow) {
   const publication = workflow.result.metadata?.publicationResolution;
-  const publicationLines = publication?.enabled ? [
-    '',
-    'Publication resolution:',
-    `- Attempted: ${publication.attempted}`,
-    `- Published metadata resolved: ${publication.resolvedPublished}`,
-    `- Preprint only: ${publication.preprintOnly}`
-  ] : [];
+  const publicationLines = publication?.enabled
+    ? [
+        '',
+        'Publication resolution:',
+        `- Attempted: ${publication.attempted}`,
+        `- Published metadata resolved: ${publication.resolvedPublished}`,
+        `- Preprint only: ${publication.preprintOnly}`,
+      ]
+    : [];
   return [
     'lit-search completed.',
     '',
@@ -396,7 +509,7 @@ function buildMcpOutputSummary(workflow) {
     ...publicationLines,
     '',
     'Use search_meta.json to reproduce the search, literature_pool.json for complete machine-readable results, and references.bib for LaTeX/reference-manager import.',
-    'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.'
+    'Agent note: do not launch parallel lit-search calls for one research request; combine related concepts into one comma-separated query.',
   ].join('\n');
 }
 
@@ -412,8 +525,10 @@ function formatPaperSummary(paper) {
     paper.doi ? `DOI: ${paper.doi}` : null,
     typeof paper.citationCount === 'number' ? `Citations: ${paper.citationCount}` : null,
     paper.url ? `URL: ${paper.url}` : null,
-    paper.abstract ? `\nAbstract: ${paper.abstract}` : null
-  ].filter(Boolean).join('\n');
+    paper.abstract ? `\nAbstract: ${paper.abstract}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function mcpErrorResponse(err) {
@@ -424,14 +539,16 @@ function mcpErrorResponse(err) {
   logDebug(`tool error code=${code} message=${message} retryable=${retryable}`);
   return {
     isError: true,
-    content: [{
-      type: 'text',
-      text: `[${code}] ${message}${retryable ? ' (retryable)' : ''}`
-    }],
+    content: [
+      {
+        type: 'text',
+        text: `[${code}] ${message}${retryable ? ' (retryable)' : ''}`,
+      },
+    ],
     structuredContent: {
       ok: false,
-      error: { code, message, retryable, ...details }
-    }
+      error: { code, message, retryable, ...details },
+    },
   };
 }
 
@@ -439,7 +556,11 @@ function logDebug(message) {
   if (!debugLogFile) return;
   try {
     mkdirSync(dirname(debugLogFile), { recursive: true });
-    appendFileSync(debugLogFile, `[${new Date().toISOString()}] [lit-search-mcp] ${message}\n`, 'utf8');
+    appendFileSync(
+      debugLogFile,
+      `[${new Date().toISOString()}] [lit-search-mcp] ${message}\n`,
+      'utf8'
+    );
   } catch {
     // Debug logging must never break the MCP protocol.
   }

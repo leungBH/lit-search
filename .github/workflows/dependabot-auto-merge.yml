@@ -1,0 +1,52 @@
+name: Auto-merge Dependabot patch updates
+
+# Auto-merge Dependabot PRs that only contain a patch-level bump AND
+# have a green CI. This lets the bot consume security fixes and small
+# bug-fix releases without any human action.
+#
+# Minor and major updates are intentionally NOT auto-merged: they need
+# a human to read the changelog, since they can change behaviour.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  dependabot-auto-merge:
+    name: Auto-merge patch updates
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only auto-merge when:
+      #   1. The update type is 'patch' (semver-patch). Minor/major are excluded.
+      #   2. The PR is for the npm ecosystem (we only enable npm dependabot).
+      - name: Add 'manual-review' label to non-patch / transitive PRs
+        if: steps.meta.outputs.update-type != 'version-update:semver-patch' || steps.meta.outputs.dependency-type != 'direct:production'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = ['manual-review'];
+            for (const label of labels) {
+              try { await github.rest.issues.addLabels({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, labels: [label] }); }
+              catch (e) { /* label may already exist */ }
+            }
+
+      - name: Auto-merge patch PR
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' && steps.meta.outputs.dependency-type == 'direct:production'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

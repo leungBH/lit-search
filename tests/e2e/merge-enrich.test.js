@@ -27,7 +27,7 @@ function buildPaper(seq, title, doi) {
     doi,
     identifiers: doi ? { doi } : {},
     pdf_candidates: [],
-    references: []
+    references: [],
   };
 }
 
@@ -38,7 +38,11 @@ let paperCounter = 0;
 function uniquePaper(title) {
   paperCounter += 1;
   const nonce = Math.floor(Math.random() * 1e9);
-  return buildPaper(paperCounter, title, `10.1234/${nonce.toString(36)}-${title.replace(/\W/g, '').slice(0, 8).toLowerCase()}`);
+  return buildPaper(
+    paperCounter,
+    title,
+    `10.1234/${nonce.toString(36)}-${title.replace(/\W/g, '').slice(0, 8).toLowerCase()}`
+  );
 }
 
 async function importPoolOps() {
@@ -58,18 +62,36 @@ suite('mergePools: file-IO and dedup (engines off, no network)', () => {
       const outDir = join(project, 'merged');
 
       const { writeResultFiles } = await importOutputFiles();
-      writeResultFiles({
-        metadata: { query: 'p1' },
-        papers: [uniquePaper('Quantum chromodynamics'), uniquePaper('Reactive control systems'), uniquePaper('Photosynthetic pathways in algae')]
-      }, dir1, { mode: 'test', outputDir: dir1 });
-      writeResultFiles({
-        metadata: { query: 'p2' },
-        papers: [uniquePaper('Quantum chromodynamics'), uniquePaper('Topological insulators'), uniquePaper('Photosynthetic pathways in algae')]
-      }, dir2, { mode: 'test', outputDir: dir2 });
+      writeResultFiles(
+        {
+          metadata: { query: 'p1' },
+          papers: [
+            uniquePaper('Quantum chromodynamics'),
+            uniquePaper('Reactive control systems'),
+            uniquePaper('Photosynthetic pathways in algae'),
+          ],
+        },
+        dir1,
+        { mode: 'test', outputDir: dir1 }
+      );
+      writeResultFiles(
+        {
+          metadata: { query: 'p2' },
+          papers: [
+            uniquePaper('Quantum chromodynamics'),
+            uniquePaper('Topological insulators'),
+            uniquePaper('Photosynthetic pathways in algae'),
+          ],
+        },
+        dir2,
+        { mode: 'test', outputDir: dir2 }
+      );
 
       const { mergePools } = await importPoolOps();
       // Engines explicitly disabled so no API client is constructed
-      const result = await mergePools([dir1, dir2], outDir, { engines: { unpaywall: false, openCitations: false } });
+      const result = await mergePools([dir1, dir2], outDir, {
+        engines: { unpaywall: false, openCitations: false },
+      });
       const poolFile = join(outDir, 'literature_pool.json');
       assertOk(existsSync(poolFile), 'pool file should be written');
       const pool = JSON.parse(readFileSync(poolFile, 'utf-8'));
@@ -90,13 +112,14 @@ suite('mergePools: file-IO and dedup (engines off, no network)', () => {
       const dir1 = join(project, 'pool1');
       const outDir = join(project, 'merged');
       const { writeResultFiles } = await importOutputFiles();
-      writeResultFiles({
-        metadata: {},
-        papers: [
-          uniquePaper('Quantum chromodynamics'),
-          uniquePaper('Topological insulators')
-        ]
-      }, dir1, { mode: 'test', outputDir: dir1 });
+      writeResultFiles(
+        {
+          metadata: {},
+          papers: [uniquePaper('Quantum chromodynamics'), uniquePaper('Topological insulators')],
+        },
+        dir1,
+        { mode: 'test', outputDir: dir1 }
+      );
       const { mergePools } = await importPoolOps();
       await mergePools([dir1], outDir, { engines: { unpaywall: false, openCitations: false } });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
@@ -133,8 +156,14 @@ suite('mergePools: edge cases', () => {
       const d2 = join(project, 'b');
       const out = join(project, 'm');
       const { writeResultFiles } = await importOutputFiles();
-      writeResultFiles({ metadata: {}, papers: [uniquePaper('T1')] }, d1, { mode: 'test', outputDir: d1 });
-      writeResultFiles({ metadata: {}, papers: [uniquePaper('U1')] }, d2, { mode: 'test', outputDir: d2 });
+      writeResultFiles({ metadata: {}, papers: [uniquePaper('T1')] }, d1, {
+        mode: 'test',
+        outputDir: d1,
+      });
+      writeResultFiles({ metadata: {}, papers: [uniquePaper('U1')] }, d2, {
+        mode: 'test',
+        outputDir: d2,
+      });
       const { mergePools } = await importPoolOps();
       await mergePools([d1, d2], out, { engines: { unpaywall: false, openCitations: false } });
       const meta = JSON.parse(readFileSync(join(out, 'search_meta.json'), 'utf-8'));
@@ -152,15 +181,19 @@ suite('enrichMetadata: shape smoke test (no network)', () => {
     try {
       const dir = join(project, 'pool');
       const { writeResultFiles } = await importOutputFiles();
-      writeResultFiles({
-        metadata: {},
-        papers: [buildPaper(1, 'Title', '10.1/x')]
-      }, dir, { mode: 'test', outputDir: dir });
+      writeResultFiles(
+        {
+          metadata: {},
+          papers: [buildPaper(1, 'Title', '10.1/x')],
+        },
+        dir,
+        { mode: 'test', outputDir: dir }
+      );
 
       const { enrichMetadata } = await importPoolOps();
       const result = await enrichMetadata(join(dir, 'literature_pool.json'), {
         fields: 'abstract',
-        engines: { unpaywall: false, openCitations: false }
+        engines: { unpaywall: false, openCitations: false },
       });
       assertOk(result.pool);
       assertEqual(result.pool.papers.length, 1);

@@ -31,7 +31,7 @@ function checkApiKeyConfig() {
     { label: 'Semantic Scholar', key: 'semanticScholar' },
     { label: 'OpenAlex', key: 'openalex' },
     { label: 'CrossRef mailto', key: 'crossrefMailto' },
-    { label: 'CORE', key: 'core' }
+    { label: 'CORE', key: 'core' },
   ];
 
   for (const { label, key } of keyNames) {
@@ -66,7 +66,7 @@ async function testAPI(name, api, method, query, options = {}) {
 
       const fields = [
         { label: '标题', key: 'title' },
-        { label: '作者', key: 'authors', check: v => Array.isArray(v) && v.length > 0 },
+        { label: '作者', key: 'authors', check: (v) => Array.isArray(v) && v.length > 0 },
         { label: '年份', key: 'year' },
         { label: '期刊/来源', key: 'journal' },
         { label: 'DOI', key: 'doi' },
@@ -77,15 +77,17 @@ async function testAPI(name, api, method, query, options = {}) {
         { label: '期号', key: 'issue' },
         { label: '页码', key: 'pages' },
         { label: '出版商', key: 'publisher' },
-        { label: '关键词', key: 'keywords', check: v => Array.isArray(v) && v.length > 0 },
+        { label: '关键词', key: 'keywords', check: (v) => Array.isArray(v) && v.length > 0 },
         { label: '语言', key: 'language' },
-        { label: '作品类型', key: 'workType' }
+        { label: '作品类型', key: 'workType' },
       ];
 
       const fieldResults = [];
       for (const { label, key, check } of fields) {
         const value = paper[key];
-        const present = check ? check(value) : (value !== null && value !== undefined && value !== '');
+        const present = check
+          ? check(value)
+          : value !== null && value !== undefined && value !== '';
         fieldResults.push(`${present ? '✅' : '⬜'} ${label}`);
       }
       console.log(`   📊 字段返回:`);
@@ -145,10 +147,22 @@ async function main() {
   const crossrefApi = new CrossrefAPI(apiKeys.crossrefMailto);
   const coreApi = new CoreAPI(apiKeys.core);
 
-  const s2Results = await testAPI('Semantic Scholar', s2Api, 'searchPapers', testQuery, testOptions);
+  const s2Results = await testAPI(
+    'Semantic Scholar',
+    s2Api,
+    'searchPapers',
+    testQuery,
+    testOptions
+  );
   const oaResults = await testAPI('OpenAlex', oaApi, 'searchWorks', testQuery, testOptions);
   const arxivResults = await testAPI('arXiv', arxivApi, 'search', testQuery, testOptions);
-  const crossrefResults = await testAPI('CrossRef', crossrefApi, 'searchWorks', testQuery, testOptions);
+  const crossrefResults = await testAPI(
+    'CrossRef',
+    crossrefApi,
+    'searchWorks',
+    testQuery,
+    testOptions
+  );
   const coreResults = await testAPI('CORE', coreApi, 'searchWorks', testQuery, testOptions);
 
   await testSearchScopes();
@@ -161,7 +175,7 @@ async function main() {
     { name: 'OpenAlex', count: oaResults.length },
     { name: 'arXiv', count: arxivResults.length },
     { name: 'CrossRef', count: crossrefResults.length },
-    { name: 'CORE', count: coreResults.length }
+    { name: 'CORE', count: coreResults.length },
   ];
 
   let total = 0;
@@ -202,7 +216,7 @@ async function main() {
     { name: 'OpenAlex', url: 'https://api.openalex.org' },
     { name: 'arXiv', url: 'http://export.arxiv.org' },
     { name: 'CrossRef', url: 'https://api.crossref.org' },
-    { name: 'CORE', url: 'https://api.core.ac.uk' }
+    { name: 'CORE', url: 'https://api.core.ac.uk' },
   ];
 
   for (const { name, url } of urls) {

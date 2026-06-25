@@ -66,3 +66,7 @@ outputs/
 
 # openspec
 openspec/
+
+# Test coverage
+coverage/
+.nyc_output/

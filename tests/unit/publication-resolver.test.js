@@ -12,12 +12,12 @@ import {
   assertDeepEqual,
   assertOk,
   assertMatch,
-  assertThrows
+  assertThrows,
 } from '../test-runner.js';
 import {
   attachPublicationModel,
   resolvePublicationForPaper,
-  resolvePublicationsInPool
+  resolvePublicationsInPool,
 } from '../../lib/publication-resolver.js';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -38,7 +38,11 @@ suite('publication-resolver: attachPublicationModel (identity + preprint)', () =
   });
 
   test('prefers paper.doi over identifiers.doi when both set', () => {
-    const out = attachPublicationModel({ title: 't', doi: '10.1/A', identifiers: { doi: '10.1/B' } });
+    const out = attachPublicationModel({
+      title: 't',
+      doi: '10.1/A',
+      identifiers: { doi: '10.1/B' },
+    });
     assertEqual(out.identity.doi, '10.1/a');
   });
 
@@ -51,8 +55,12 @@ suite('publication-resolver: attachPublicationModel (identity + preprint)', () =
 
   test('preprint object is built when source=arxiv', () => {
     const out = attachPublicationModel({
-      title: 'T', source: 'arxiv', arxiv_id: '2401.01234',
-      authors: ['Alice Smith', 'Bob Jones'], year: 2024, journal: 'arXiv'
+      title: 'T',
+      source: 'arxiv',
+      arxiv_id: '2401.01234',
+      authors: ['Alice Smith', 'Bob Jones'],
+      year: 2024,
+      journal: 'arXiv',
     });
     assertEqual(out.preprint.source, 'arxiv');
     assertEqual(out.preprint.arxiv_id, '2401.01234');
@@ -70,7 +78,7 @@ suite('publication-resolver: attachPublicationModel (identity + preprint)', () =
     const out = attachPublicationModel({
       title: 'Attention Is All You Need',
       authors: ['Ashish Vaswani', 'Noam Shazeer'],
-      year: 2017
+      year: 2017,
     });
     // normalizeTitle lowercases and strips punctuation
     assertMatch(out.identity.title_author_year_fingerprint, /attention is all you need/);
@@ -82,15 +90,18 @@ suite('publication-resolver: attachPublicationModel (identity + preprint)', () =
 suite('publication-resolver: attachPublicationModel (publication_status inference)', () => {
   test('citation_metadata with non-arxiv DOI → published', () => {
     const out = attachPublicationModel({
-      title: 't', source: 'openalex',
-      citation_metadata: { doi: '10.1145/abc', journal: 'CACM' }
+      title: 't',
+      source: 'openalex',
+      citation_metadata: { doi: '10.1145/abc', journal: 'CACM' },
     });
     assertEqual(out.publication_status, 'published');
   });
 
   test('paper.doi with non-arxiv journal → published', () => {
     const out = attachPublicationModel({
-      title: 't', doi: '10.1145/abc', journal: 'CACM'
+      title: 't',
+      doi: '10.1145/abc',
+      journal: 'CACM',
     });
     assertEqual(out.publication_status, 'published');
   });
@@ -101,7 +112,9 @@ suite('publication-resolver: attachPublicationModel (publication_status inferenc
     // The "published" branch is skipped (arxiv-like), but the "preprint_only"
     // branch needs an explicit preprint signal.
     const out = attachPublicationModel({
-      title: 't', doi: '10.48550/arxiv.2401.01234', journal: 'arXiv'
+      title: 't',
+      doi: '10.48550/arxiv.2401.01234',
+      journal: 'arXiv',
     });
     assertEqual(out.publication_status, 'unknown');
   });
@@ -110,8 +123,10 @@ suite('publication-resolver: attachPublicationModel (publication_status inferenc
     // Once the arxiv_id signal is present, the published branch is skipped
     // (arxiv-like) AND the preprint_only branch fires.
     const out = attachPublicationModel({
-      title: 't', doi: '10.48550/arxiv.2401.01234', journal: 'arXiv',
-      arxiv_id: '2401.01234'
+      title: 't',
+      doi: '10.48550/arxiv.2401.01234',
+      journal: 'arXiv',
+      arxiv_id: '2401.01234',
     });
     assertEqual(out.publication_status, 'preprint_only');
   });
@@ -122,8 +137,9 @@ suite('publication-resolver: attachPublicationModel (publication_status inferenc
     // signal is only in the DOI, it is NOT detected as preprint.
     // This is a quirk worth pinning — see lib/publication-resolver.js#inferPublicationStatus.
     const out = attachPublicationModel({
-      title: 't', source: 'openalex',
-      citation_metadata: { doi: '10.48550/arxiv.2401.01234' }
+      title: 't',
+      source: 'openalex',
+      citation_metadata: { doi: '10.48550/arxiv.2401.01234' },
     });
     assertEqual(out.publication_status, 'published');
   });
@@ -144,7 +160,11 @@ suite('publication-resolver: attachPublicationModel (publication_status inferenc
   });
 
   test('explicit publication_status on input wins over inference', () => {
-    const out = attachPublicationModel({ title: 't', source: 'arxiv', publication_status: 'published' });
+    const out = attachPublicationModel({
+      title: 't',
+      source: 'arxiv',
+      publication_status: 'published',
+    });
     assertEqual(out.publication_status, 'published');
   });
 });
@@ -168,7 +188,7 @@ suite('publication-resolver: attachPublicationModel (metadata_sources shape)', (
   test('preserves existing metadata_sources keys', () => {
     const out = attachPublicationModel({
       title: 't',
-      metadata_sources: { existing: { source: 'orig', confidence: 0.5, reason: 'kept' } }
+      metadata_sources: { existing: { source: 'orig', confidence: 0.5, reason: 'kept' } },
     });
     assertOk(out.metadata_sources.existing);
     assertOk(out.metadata_sources.identity);
@@ -184,8 +204,11 @@ suite('publication-resolver: attachPublicationModel (citation_metadata & prefere
 
   test('builds a fresh citation_metadata from paper when none provided', () => {
     const out = attachPublicationModel({
-      title: 'T', authors: ['Alice'], year: 2020, doi: '10.1/x',
-      source: 'openalex'
+      title: 'T',
+      authors: ['Alice'],
+      year: 2020,
+      doi: '10.1/x',
+      source: 'openalex',
     });
     assertEqual(out.citation_metadata.title, 'T');
     assertEqual(out.citation_metadata.year, 2020);
@@ -195,7 +218,9 @@ suite('publication-resolver: attachPublicationModel (citation_metadata & prefere
 
   test('citation_metadata_preference defaults to best_available when published', () => {
     const out = attachPublicationModel({
-      title: 't', doi: '10.1145/abc', journal: 'CACM'
+      title: 't',
+      doi: '10.1145/abc',
+      journal: 'CACM',
     });
     assertEqual(out.publication_status, 'published');
     assertEqual(out.citation_metadata_preference, 'best_available');
@@ -208,8 +233,9 @@ suite('publication-resolver: attachPublicationModel (citation_metadata & prefere
 
   test('preserves explicit citation_metadata_preference on input', () => {
     const out = attachPublicationModel({
-      title: 't', source: 'arxiv',
-      citation_metadata_preference: 'best_available'
+      title: 't',
+      source: 'arxiv',
+      citation_metadata_preference: 'best_available',
     });
     assertEqual(out.citation_metadata_preference, 'best_available');
   });
@@ -223,9 +249,18 @@ function makeStubOpenalex({ byDoi = null, byId = null, searchResults = [] } = {}
   const calls = { byDoi: [], byId: [], search: [] };
   return {
     calls,
-    fetchWorkByDoi: async (doi) => { calls.byDoi.push(doi); return byDoi; },
-    fetchWorkById:  async (id)  => { calls.byId.push(id);  return byId; },
-    searchWorks:    async (q, o) => { calls.search.push({ q, o }); return searchResults; }
+    fetchWorkByDoi: async (doi) => {
+      calls.byDoi.push(doi);
+      return byDoi;
+    },
+    fetchWorkById: async (id) => {
+      calls.byId.push(id);
+      return byId;
+    },
+    searchWorks: async (q, o) => {
+      calls.search.push({ q, o });
+      return searchResults;
+    },
   };
 }
 
@@ -266,11 +301,19 @@ suite('publication-resolver: resolvePublicationForPaper (no resolution needed)',
 suite('publication-resolver: resolvePublicationForPaper (DOI lookup)', () => {
   test('DOI lookup that returns a non-arxiv formal record → published', async () => {
     const candidate = {
-      doi: '10.1145/abc', title: 'Some Paper', authors: ['Alice'], year: 2020,
-      journal: 'CACM'
+      doi: '10.1145/abc',
+      title: 'Some Paper',
+      authors: ['Alice'],
+      year: 2020,
+      journal: 'CACM',
     };
     const openalex = makeStubOpenalex({ byDoi: candidate });
-    const paper = { title: 'Some Paper', source: 'arxiv', arxiv_id: '2401.01234', doi: '10.1145/abc' };
+    const paper = {
+      title: 'Some Paper',
+      source: 'arxiv',
+      arxiv_id: '2401.01234',
+      doi: '10.1145/abc',
+    };
     const out = await resolvePublicationForPaper(paper, { openalex });
     assertEqual(out.publication_status, 'published');
     assertEqual(out.citation_metadata.source, 'openalex.formal_record');
@@ -290,9 +333,11 @@ suite('publication-resolver: resolvePublicationForPaper (DOI lookup)', () => {
 
   test('DOI lookup that throws is treated as no candidate', async () => {
     const openalex = {
-      fetchWorkByDoi: async () => { throw new Error('network'); },
-      fetchWorkById:  async () => null,
-      searchWorks:    async () => []
+      fetchWorkByDoi: async () => {
+        throw new Error('network');
+      },
+      fetchWorkById: async () => null,
+      searchWorks: async () => [],
     };
     const paper = { title: 'T', source: 'arxiv', arxiv_id: '2401.01234' };
     const out = await resolvePublicationForPaper(paper, { openalex });
@@ -303,12 +348,16 @@ suite('publication-resolver: resolvePublicationForPaper (DOI lookup)', () => {
 suite('publication-resolver: resolvePublicationForPaper (OpenAlex ID lookup)', () => {
   test('openalex_id lookup returns a formal record → published', async () => {
     const candidate = {
-      doi: '10.1145/abc', title: 'Paper', authors: ['A'], year: 2020, journal: 'CACM'
+      doi: '10.1145/abc',
+      title: 'Paper',
+      authors: ['A'],
+      year: 2020,
+      journal: 'CACM',
     };
     const openalex = {
       fetchWorkByDoi: async () => null,
-      fetchWorkById:  async () => candidate,
-      searchWorks:    async () => []
+      fetchWorkById: async () => candidate,
+      searchWorks: async () => [],
     };
     // must have a preprint signal (source=arxiv) for shouldAttemptResolution to pass
     const paper = { title: 'Paper', source: 'arxiv', arxiv_id: '2401.0', openalex_id: 'W123' };
@@ -320,10 +369,18 @@ suite('publication-resolver: resolvePublicationForPaper (OpenAlex ID lookup)', (
     const candidate = { doi: '10.1/x', title: 'X', authors: ['A'], year: 2020, journal: 'J' };
     const openalex = {
       fetchWorkByDoi: async () => null,
-      fetchWorkById:  async (id) => { assertEqual(id, 'W999'); return candidate; },
-      searchWorks:    async () => []
+      fetchWorkById: async (id) => {
+        assertEqual(id, 'W999');
+        return candidate;
+      },
+      searchWorks: async () => [],
     };
-    const paper = { title: 'X', source: 'arxiv', arxiv_id: '2401.0', identifiers: { openalex: 'W999' } };
+    const paper = {
+      title: 'X',
+      source: 'arxiv',
+      arxiv_id: '2401.0',
+      identifiers: { openalex: 'W999' },
+    };
     const out = await resolvePublicationForPaper(paper, { openalex });
     assertEqual(out.publication_status, 'published');
   });
@@ -332,19 +389,31 @@ suite('publication-resolver: resolvePublicationForPaper (OpenAlex ID lookup)', (
 suite('publication-resolver: resolvePublicationForPaper (title search)', () => {
   test('title search returns a high-confidence match → published', async () => {
     const candidate = {
-      doi: '10.1/x', title: 'Attention Is All You Need',
-      authors: ['Ashish Vaswani', 'Noam Shazeer'], year: 2017, journal: 'NeurIPS'
+      doi: '10.1/x',
+      title: 'Attention Is All You Need',
+      authors: ['Ashish Vaswani', 'Noam Shazeer'],
+      year: 2017,
+      journal: 'NeurIPS',
     };
     const openalex = makeStubOpenalex({ searchResults: [candidate] });
-    const paper = { title: 'Attention Is All You Need', source: 'arxiv', arxiv_id: '1706.03762', year: 2017, authors: ['Ashish Vaswani'] };
+    const paper = {
+      title: 'Attention Is All You Need',
+      source: 'arxiv',
+      arxiv_id: '1706.03762',
+      year: 2017,
+      authors: ['Ashish Vaswani'],
+    };
     const out = await resolvePublicationForPaper(paper, { openalex });
     assertEqual(out.publication_status, 'published');
   });
 
   test('title search returns only low-similarity candidates → preprint_only', async () => {
     const candidate = {
-      doi: '10.1/x', title: 'Completely Different Topic',
-      authors: ['Z'], year: 2017, journal: 'J'
+      doi: '10.1/x',
+      title: 'Completely Different Topic',
+      authors: ['Z'],
+      year: 2017,
+      journal: 'J',
     };
     const openalex = makeStubOpenalex({ searchResults: [candidate] });
     const paper = { title: 'Attention Is All You Need', source: 'arxiv', arxiv_id: '1706.03762' };
@@ -366,9 +435,17 @@ suite('publication-resolver: resolvePublicationForPaper (title search)', () => {
 suite('publication-resolver: resolvePublicationForPaper (preferPublished top-level copy)', () => {
   test('preferPublished=true: top-level fields updated from citation_metadata', async () => {
     const candidate = {
-      doi: '10.1/x', title: 'T', authors: ['A'], year: 2020,
-      journal: 'J', volume: '1', issue: '2', pages: '1-10',
-      publisher: 'P', url: 'https://x', entry_type: 'article'
+      doi: '10.1/x',
+      title: 'T',
+      authors: ['A'],
+      year: 2020,
+      journal: 'J',
+      volume: '1',
+      issue: '2',
+      pages: '1-10',
+      publisher: 'P',
+      url: 'https://x',
+      entry_type: 'article',
     };
     const openalex = makeStubOpenalex({ byDoi: candidate });
     const paper = { title: 'T', source: 'arxiv', arxiv_id: '2401.0', doi: '10.1/x' };
@@ -386,10 +463,20 @@ suite('publication-resolver: resolvePublicationForPaper (preferPublished top-lev
 
   test('preferPublished=false (default): top-level fields NOT overwritten', async () => {
     const candidate = {
-      doi: '10.1/x', title: 'T', authors: ['A'], year: 2020, journal: 'J'
+      doi: '10.1/x',
+      title: 'T',
+      authors: ['A'],
+      year: 2020,
+      journal: 'J',
     };
     const openalex = makeStubOpenalex({ byDoi: candidate });
-    const paper = { title: 'T', source: 'arxiv', arxiv_id: '2401.0', doi: '10.1/x', journal: 'arXiv' };
+    const paper = {
+      title: 'T',
+      source: 'arxiv',
+      arxiv_id: '2401.0',
+      doi: '10.1/x',
+      journal: 'arXiv',
+    };
     const out = await resolvePublicationForPaper(paper, { openalex });
     // citation_metadata has the new journal, but top-level still has 'arXiv'
     assertEqual(out.citation_metadata.journal, 'J');
@@ -404,10 +491,12 @@ suite('publication-resolver: resolvePublicationForPaper (preferPublished top-lev
 suite('publication-resolver: resolvePublicationsInPool (stats)', () => {
   test('enabled=false: every paper is base model, no openalex calls', async () => {
     const openalex = makeStubOpenalex();
-    const pool = { papers: [
-      { title: 'A', source: 'arxiv' },
-      { title: 'B', source: 'openalex', doi: '10.1/x' }
-    ] };
+    const pool = {
+      papers: [
+        { title: 'A', source: 'arxiv' },
+        { title: 'B', source: 'openalex', doi: '10.1/x' },
+      ],
+    };
     const { stats } = await resolvePublicationsInPool(pool, { openalex });
     assertEqual(openalex.calls.byDoi.length, 0);
     assertEqual(stats.attempted, 0);
@@ -417,12 +506,15 @@ suite('publication-resolver: resolvePublicationsInPool (stats)', () => {
   test('enabled=true (resolvePreprint): arxiv papers attempted', async () => {
     const candidate = { doi: '10.1/x', title: 'T', authors: ['A'], year: 2020, journal: 'J' };
     const openalex = makeStubOpenalex({ byDoi: candidate });
-    const pool = { papers: [
-      { title: 'T', source: 'arxiv', arxiv_id: '2401.0', doi: '10.1/x' },
-      { title: 'B', source: 'openalex' } // no preprint signal, not attempted
-    ] };
+    const pool = {
+      papers: [
+        { title: 'T', source: 'arxiv', arxiv_id: '2401.0', doi: '10.1/x' },
+        { title: 'B', source: 'openalex' }, // no preprint signal, not attempted
+      ],
+    };
     const { pool: out, stats } = await resolvePublicationsInPool(pool, {
-      openalex, resolvePreprint: true
+      openalex,
+      resolvePreprint: true,
     });
     assertEqual(stats.attempted, 1);
     assertEqual(stats.resolvedPublished, 1);
@@ -431,9 +523,11 @@ suite('publication-resolver: resolvePublicationsInPool (stats)', () => {
 
   test('stats.unknown counts non-published, non-preprint papers', async () => {
     const openalex = makeStubOpenalex();
-    const pool = { papers: [
-      { title: 'A', source: 'openalex' } // unknown: no DOI, no preprint
-    ] };
+    const pool = {
+      papers: [
+        { title: 'A', source: 'openalex' }, // unknown: no DOI, no preprint
+      ],
+    };
     const { stats } = await resolvePublicationsInPool(pool, { openalex, resolvePreprint: true });
     assertEqual(stats.unknown, 1);
     assertEqual(stats.preprintOnly, 0);

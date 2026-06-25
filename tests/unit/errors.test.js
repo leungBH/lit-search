@@ -3,11 +3,15 @@
 // Pure-function tests for LitSearchError, ErrorCode, and wrapError.
 // No network access required.
 
+import { LitSearchError, ErrorCode, wrapError } from '../../lib/errors.js';
 import {
-  LitSearchError, ErrorCode, wrapError
-} from '../../lib/errors.js';
-import {
-  suite, test, assertEqual, assertDeepEqual, assertOk, assertFalsy, assertTruthy
+  suite,
+  test,
+  assertEqual,
+  assertDeepEqual,
+  assertOk,
+  assertFalsy,
+  assertTruthy,
 } from '../test-runner.js';
 
 suite('errors: LitSearchError construction', () => {
@@ -19,21 +23,37 @@ suite('errors: LitSearchError construction', () => {
   });
 
   test('retryable=true for RATE_LIMITED, TIMEOUT, NETWORK_ERROR, SOURCE_ERROR, ALL_SOURCES_FAILED', () => {
-    for (const code of ['RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'SOURCE_ERROR', 'ALL_SOURCES_FAILED']) {
+    for (const code of [
+      'RATE_LIMITED',
+      'TIMEOUT',
+      'NETWORK_ERROR',
+      'SOURCE_ERROR',
+      'ALL_SOURCES_FAILED',
+    ]) {
       const e = new LitSearchError(code, 'msg');
       assertEqual(e.retryable, true, `${code} should be retryable`);
     }
   });
 
   test('retryable=false for INVALID_INPUT, MISSING_REQUIRED, NOT_FOUND, CANCELLED, AUTH_REQUIRED, INTERNAL_ERROR', () => {
-    for (const code of ['INVALID_INPUT', 'MISSING_REQUIRED', 'NOT_FOUND', 'CANCELLED', 'AUTH_REQUIRED', 'INTERNAL_ERROR']) {
+    for (const code of [
+      'INVALID_INPUT',
+      'MISSING_REQUIRED',
+      'NOT_FOUND',
+      'CANCELLED',
+      'AUTH_REQUIRED',
+      'INTERNAL_ERROR',
+    ]) {
       const e = new LitSearchError(code, 'msg');
       assertEqual(e.retryable, false, `${code} should NOT be retryable`);
     }
   });
 
   test('details are stored and surfaced in toJSON', () => {
-    const e = new LitSearchError('NOT_FOUND', 'not found', { source: 'openalex', target: '10.1/x' });
+    const e = new LitSearchError('NOT_FOUND', 'not found', {
+      source: 'openalex',
+      target: '10.1/x',
+    });
     const out = e.toJSON();
     assertEqual(out.ok, false);
     assertEqual(out.error.code, 'NOT_FOUND');
@@ -137,10 +157,17 @@ suite('errors: wrapError normalization', () => {
 suite('errors: ErrorCode registry', () => {
   test('contains all expected codes', () => {
     const expected = [
-      'INVALID_INPUT', 'MISSING_REQUIRED', 'NOT_FOUND',
-      'RATE_LIMITED', 'TIMEOUT', 'NETWORK_ERROR', 'SOURCE_ERROR',
-      'ALL_SOURCES_FAILED', 'CANCELLED',
-      'AUTH_REQUIRED', 'INTERNAL_ERROR'
+      'INVALID_INPUT',
+      'MISSING_REQUIRED',
+      'NOT_FOUND',
+      'RATE_LIMITED',
+      'TIMEOUT',
+      'NETWORK_ERROR',
+      'SOURCE_ERROR',
+      'ALL_SOURCES_FAILED',
+      'CANCELLED',
+      'AUTH_REQUIRED',
+      'INTERNAL_ERROR',
     ];
     for (const code of expected) {
       assertOk(ErrorCode[code], `ErrorCode.${code} should exist`);

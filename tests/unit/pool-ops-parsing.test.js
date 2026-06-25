@@ -9,12 +9,7 @@
 
 import { suite, test } from '../test-runner.js';
 import { assertEqual, assertDeepEqual, assertOk } from '../test-runner.js';
-import {
-  parseCitations,
-  extractDoi,
-  extractTitle,
-  extractYear
-} from '../../lib/pool-ops.js';
+import { parseCitations, extractDoi, extractTitle, extractYear } from '../../lib/pool-ops.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // extractDoi
@@ -57,11 +52,17 @@ suite('pool-ops: extractDoi', () => {
 
 suite('pool-ops: extractTitle', () => {
   test('content inside straight double quotes wins over surrounding text', () => {
-    assertEqual(extractTitle('Title: "Attention is all you need" (2017)'), 'Attention is all you need');
+    assertEqual(
+      extractTitle('Title: "Attention is all you need" (2017)'),
+      'Attention is all you need'
+    );
   });
 
   test('content inside smart quotes (curly) wins over surrounding text', () => {
-    assertEqual(extractTitle('Title: "Attention is all you need" (2017)'), 'Attention is all you need');
+    assertEqual(
+      extractTitle('Title: "Attention is all you need" (2017)'),
+      'Attention is all you need'
+    );
   });
 
   test('inline DOI is stripped from bare title', () => {

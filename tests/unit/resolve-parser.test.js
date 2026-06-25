@@ -5,7 +5,15 @@
 // Every test here must run in <100ms and not require network.
 
 import { parseCitations, extractDoi, extractTitle, extractYear } from '../../lib/pool-ops.js';
-import { suite, test, assertEqual, assertTruthy, assertFalsy, assertOk, assertMatch } from '../test-runner.js';
+import {
+  suite,
+  test,
+  assertEqual,
+  assertTruthy,
+  assertFalsy,
+  assertOk,
+  assertMatch,
+} from '../test-runner.js';
 
 suite('resolve-citation parser: one-citation-per-line (regression: v1.4 bug)', () => {
   test('single bare title is parsed as exactly 1 citation', () => {
@@ -107,7 +115,8 @@ suite('resolve-citation parser: numbered and bracketed lists', () => {
 
 suite('resolve-citation parser: BibTeX entries', () => {
   test('single @article entry', () => {
-    const bib = '@article{vaswani2017attention,\n  title={Attention Is All You Need},\n  author={Vaswani, Ashish},\n  year={2017}\n}';
+    const bib =
+      '@article{vaswani2017attention,\n  title={Attention Is All You Need},\n  author={Vaswani, Ashish},\n  year={2017}\n}';
     const result = parseCitations(bib);
     assertEqual(result.length, 1);
     assertEqual(result[0].title, 'Attention Is All You Need');
@@ -162,7 +171,10 @@ suite('resolve-citation parser: extractTitle (regression: returned null for bare
   });
 
   test('strips inline DOI', () => {
-    assertEqual(extractTitle('10.1145/3292500.3330701 Attention Is All You Need'), 'Attention Is All You Need');
+    assertEqual(
+      extractTitle('10.1145/3292500.3330701 Attention Is All You Need'),
+      'Attention Is All You Need'
+    );
   });
 
   test('returns null for whitespace-only input', () => {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Real-filesystem tests for `lib/output-files.js`.
  *
  * These functions do real disk I/O (read, write, mkdir), so we use a
@@ -18,7 +18,7 @@ import {
   generateOutputFolderName,
   writeResultFiles,
   resolvePoolPath,
-  readLiteraturePool
+  readLiteraturePool,
 } from '../../lib/output-files.js';
 
 let tempRoot;
@@ -29,7 +29,10 @@ function makeTempDir() {
 }
 
 function freshDir(label) {
-  const dir = join(makeTempDir(), `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const dir = join(
+    makeTempDir(),
+    `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
   return dir;
 }
 
@@ -51,7 +54,7 @@ suite('output-files: generateOutputFolderName', () => {
   test('two consecutive calls produce different folder names (time may tick)', () => {
     const a = generateOutputFolderName();
     // Sleep just past the second boundary to guarantee a different stamp
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     return sleep(1100).then(() => {
       const b = generateOutputFolderName();
       assertOk(a !== b, `expected different names, got both ${a}`);
@@ -90,7 +93,11 @@ suite('output-files: resolvePoolPath (real fs)', () => {
     const dir = freshDir('no-pool');
     mkdirSync(dir, { recursive: true });
     let threw = null;
-    try { resolvePoolPath(dir); } catch (e) { threw = e; }
+    try {
+      resolvePoolPath(dir);
+    } catch (e) {
+      threw = e;
+    }
     assertOk(threw, 'expected an error for directory without literature_pool.json');
     assertOk(/Cannot find literature_pool\.json/.test(threw.message));
   });
@@ -128,11 +135,7 @@ suite('output-files: readLiteraturePool (real fs)', () => {
     const dir = freshDir('read-dir');
     mkdirSync(dir, { recursive: true });
     const data = { metadata: { query: 'q' }, papers: [{ title: 't' }] };
-    writeFileSync(
-      join(dir, 'literature_pool.json'),
-      JSON.stringify(data),
-      'utf-8'
-    );
+    writeFileSync(join(dir, 'literature_pool.json'), JSON.stringify(data), 'utf-8');
     const pool = readLiteraturePool(dir);
     assertEqual(pool.metadata.query, 'q');
   });
@@ -166,13 +169,15 @@ suite('output-files: writeResultFiles (real fs)', () => {
     const dir = freshDir('write-bib');
     const result = {
       metadata: { query: 'q' },
-      papers: [{
-        title: 'Some Paper',
-        authors: ['Alice Smith', 'Bob Jones'],
-        year: 2020,
-        journal: 'J',
-        doi: '10.1/x'
-      }]
+      papers: [
+        {
+          title: 'Some Paper',
+          authors: ['Alice Smith', 'Bob Jones'],
+          year: 2020,
+          journal: 'J',
+          doi: '10.1/x',
+        },
+      ],
     };
     const files = writeResultFiles(result, dir, { mode: 'search', outputDir: dir });
     const bib = readFileSync(files.bibFile, 'utf-8');
@@ -224,7 +229,12 @@ suite('output-files: writeResultFiles (real fs)', () => {
 // in our test runner, but the OS cleans tmpdir on reboot.
 process.on('exit', () => {
   if (tempRoot) {
-    try { rmSync(tempRoot, { recursive: true, force: true }); } catch {}
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup in the process-exit handler; swallow errors
+      // because the process is already terminating and there is no
+      // recoverable action to take here.
+    }
   }
 });
-

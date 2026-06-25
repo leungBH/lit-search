@@ -33,7 +33,9 @@ async function main() {
   results.push(await runTest('PDF candidate normalization', testPdfCandidateNormalization));
   results.push(await runTest('new source normalizers', testNewSourceNormalizers));
   results.push(await runTest('free source config keys', testFreeSourceConfigKeys));
-  results.push(await runTest('Semantic Scholar Retry-After parser', testSemanticScholarRetryAfterParser));
+  results.push(
+    await runTest('Semantic Scholar Retry-After parser', testSemanticScholarRetryAfterParser)
+  );
   results.push(await runTest('publication resolution', testPublicationResolution));
   results.push(await runTest('metadata enrichment', testMetadataEnrichment));
   results.push(await runTest('query expansion', testQueryExpansion));
@@ -46,12 +48,16 @@ async function main() {
   } else if (!hasAnyKeys(keyEnv)) {
     console.log(chalk.yellow('\nNo API keys found. Skipping network tests.'));
   } else {
-    results.push(await runTest('CLI folder output', () => runCliNetworkTest(['machine learning', '-l', '2', '-s', '2022'], keyEnv)));
+    results.push(
+      await runTest('CLI folder output', () =>
+        runCliNetworkTest(['machine learning', '-l', '2', '-s', '2022'], keyEnv)
+      )
+    );
     results.push(await runTest('MCP tools/call', () => runMcpNetworkTest(keyEnv)));
   }
 
   printSummary(results);
-  process.exit(results.some(item => !item.ok) ? 1 : 0);
+  process.exit(results.some((item) => !item.ok) ? 1 : 0);
 }
 
 async function runTest(name, fn) {
@@ -74,7 +80,7 @@ function testCliHelp() {
   const output = execFileSync(process.execPath, [cliEntry, '--help'], {
     encoding: 'utf-8',
     cwd: process.cwd(),
-    stdio: 'pipe'
+    stdio: 'pipe',
   });
 
   assert.match(output, /lit-search init/);
@@ -135,10 +141,10 @@ async function testPublicationResolution() {
         source: 'arxiv',
         provider: 'arxiv',
         access_type: 'arxiv',
-        confidence: 0.98
-      }
+        confidence: 0.98,
+      },
     ],
-    source: 'arxiv'
+    source: 'arxiv',
   };
 
   const openalexFormal = {
@@ -152,7 +158,7 @@ async function testPublicationResolution() {
     doi: '10.5555/3295222.3295349',
     url: 'https://papers.nips.cc/paper/7181-attention-is-all-you-need',
     source: 'openalex',
-    identifiers: { openalex: 'https://openalex.org/W123', doi: '10.5555/3295222.3295349' }
+    identifiers: { openalex: 'https://openalex.org/W123', doi: '10.5555/3295222.3295349' },
   };
 
   const resolved = await resolvePublicationForPaper(arxivPaper, {
@@ -160,8 +166,8 @@ async function testPublicationResolution() {
     openalex: {
       fetchWorkByDoi: async () => null,
       fetchWorkById: async () => null,
-      searchWorks: async () => [openalexFormal]
-    }
+      searchWorks: async () => [openalexFormal],
+    },
   });
 
   assert.equal(resolved.publication_status, 'published');
@@ -183,7 +189,10 @@ async function testPublicationResolution() {
 function testResultFiles() {
   const tempDir = mkdtempSync(join(tmpdir(), 'lit-search-files-'));
   try {
-    const files = writeResultFiles(buildFixturePool(), tempDir, { mode: 'test', outputDir: tempDir });
+    const files = writeResultFiles(buildFixturePool(), tempDir, {
+      mode: 'test',
+      outputDir: tempDir,
+    });
     assert.ok(existsSync(files.metaFile));
     assert.ok(existsSync(files.poolJsonFile));
     assert.ok(existsSync(files.bibFile));
@@ -212,7 +221,7 @@ function testPdfCandidateNormalization() {
       license: null,
       is_oa: false,
       confidence: 0.52,
-      reason: 'CrossRef PDF link.'
+      reason: 'CrossRef PDF link.',
     },
     {
       source: 'arxiv',
@@ -222,8 +231,8 @@ function testPdfCandidateNormalization() {
       license: null,
       is_oa: true,
       confidence: 0.98,
-      reason: 'arXiv PDF.'
-    }
+      reason: 'arXiv PDF.',
+    },
   ]);
 
   assert.equal(candidates[0].access_type, 'arxiv');
@@ -237,7 +246,7 @@ function testPdfCandidateNormalization() {
     'is_oa',
     'confidence',
     'reason',
-    'rank'
+    'rank',
   ]);
 }
 
@@ -253,7 +262,16 @@ function testNewSourceNormalizers() {
     journalTitle: 'Example Medicine',
     abstractText: 'A medical abstract.',
     keywordList: { keyword: ['medicine'] },
-    fullTextUrlList: { fullTextUrl: [{ url: 'https://example.org/a.pdf', documentStyle: 'pdf', availability: 'Open access', site: 'PMC' }] }
+    fullTextUrlList: {
+      fullTextUrl: [
+        {
+          url: 'https://example.org/a.pdf',
+          documentStyle: 'pdf',
+          availability: 'Open access',
+          site: 'PMC',
+        },
+      ],
+    },
   });
   assert.equal(europePmc.source, 'europe-pmc');
   assert.equal(europePmc.identifiers.pmid, '123');
@@ -269,8 +287,8 @@ function testNewSourceNormalizers() {
       venue: 'ICML',
       type: 'Conference and Workshop Papers',
       ee: 'https://doi.org/10.1000/dblp',
-      pages: '1-10'
-    }
+      pages: '1-10',
+    },
   });
   assert.equal(dblp.source, 'dblp');
   assert.equal(dblp.identifiers.dblp, 'conf/example/Smith24');
@@ -284,11 +302,14 @@ function testNewSourceNormalizers() {
       year: '2024',
       author: [{ name: 'Alice Smith' }],
       journal: { title: 'Open Journal', publisher: 'OA Press', volume: '1', number: '2' },
-      identifier: [{ type: 'doi', id: '10.1000/doaj' }, { type: 'eissn', id: '1234-5678' }],
+      identifier: [
+        { type: 'doi', id: '10.1000/doaj' },
+        { type: 'eissn', id: '1234-5678' },
+      ],
       abstract: 'An open access abstract.',
       keywords: ['open access'],
-      link: [{ url: 'https://example.org/doaj.pdf', type: 'fulltext' }]
-    }
+      link: [{ url: 'https://example.org/doaj.pdf', type: 'fulltext' }],
+    },
   });
   assert.equal(doaj.source, 'doaj');
   assert.equal(doaj.doi, '10.1000/doaj');
@@ -299,7 +320,7 @@ function testNewSourceNormalizers() {
 function testFreeSourceConfigKeys() {
   const keys = getEnvApiKeys({
     LIT_SEARCH_NCBI_API_KEY: 'ncbi-test',
-    LIT_SEARCH_UNPAYWALL_EMAIL: 'test@example.org'
+    LIT_SEARCH_UNPAYWALL_EMAIL: 'test@example.org',
   });
   assert.equal(keys.ncbi, 'ncbi-test');
   assert.equal(keys.unpaywallEmail, 'test@example.org');
@@ -323,9 +344,9 @@ async function testMetadataEnrichment() {
         title: 'Missing Abstract Paper',
         doi: '10.1000/missing',
         abstract: null,
-        pdf_candidates: []
-      }
-    ]
+        pdf_candidates: [],
+      },
+    ],
   };
   const result = await enrichMetadataInPool(pool, {
     resolvers: {
@@ -333,9 +354,9 @@ async function testMetadataEnrichment() {
         abstract: 'Recovered abstract.',
         keywords: ['recovered'],
         journal: 'Recovered Journal',
-        pdfCandidates: []
-      })
-    }
+        pdfCandidates: [],
+      }),
+    },
   });
 
   assert.equal(result.stats.enrichedPapers, 1);
@@ -351,18 +372,20 @@ async function testMetadataEnrichment() {
     metadata: { query: 'checkpoint fixture' },
     papers: [
       { seq_id: 1, title: 'Existing Abstract Paper', abstract: 'Already present.' },
-      { seq_id: 2, title: 'Missing Abstract Paper', doi: '10.1000/checkpoint', abstract: null }
-    ]
+      { seq_id: 2, title: 'Missing Abstract Paper', doi: '10.1000/checkpoint', abstract: null },
+    ],
   };
   const checkpointResult = await enrichMetadataInPool(checkpointPool, {
     fields: 'abstract',
     onlyMissing: true,
     concurrency: 2,
     checkpointInterval: 1,
-    onCheckpoint: async () => { checkpoints++; },
+    onCheckpoint: async () => {
+      checkpoints++;
+    },
     resolvers: {
-      openalexByDoi: async () => ({ abstract: 'Recovered checkpoint abstract.' })
-    }
+      openalexByDoi: async () => ({ abstract: 'Recovered checkpoint abstract.' }),
+    },
   });
 
   assert.equal(checkpointResult.stats.complete, 1);
@@ -382,7 +405,7 @@ function testQueryExpansion() {
     'coding agent',
     'AI',
     'coding',
-    'agent'
+    'agent',
   ]);
   assert.deepEqual(generateQueries('AI, coding, agent', [], 'full'), [
     'AI coding agent',
@@ -391,7 +414,7 @@ function testQueryExpansion() {
     'coding agent',
     'AI',
     'coding',
-    'agent'
+    'agent',
   ]);
 }
 
@@ -405,28 +428,42 @@ function testParallelSourceOrchestration() {
 }
 
 async function testMcpHandshake(env) {
-  const responses = await interactWithMcp([
-    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
-    { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
-    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }
-  ], env);
+  const responses = await interactWithMcp(
+    [
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'acceptance-test', version: '1.0.0' },
+        },
+      },
+      { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ],
+    env
+  );
 
   assert.equal(responses[0].result.serverInfo.name, 'lit-search-mcp');
   const tools = responses[1].result.tools;
-  const names = tools.map(tool => tool.name);
+  const names = tools.map((tool) => tool.name);
   assert.deepEqual(names, [
     'search_literature',
     'merge_pools',
     'enrich_metadata',
-    'resolve_citations'
+    'resolve_citations',
   ]);
-  const searchTool = tools.find(tool => tool.name === 'search_literature');
+  const searchTool = tools.find((tool) => tool.name === 'search_literature');
   assert.equal(searchTool.inputSchema.properties.format, undefined);
   assert.equal(searchTool.inputSchema.properties.downloadPdf, undefined);
   assert.ok(searchTool.inputSchema.properties.outputDir);
-  assert.ok(tools.find(tool => tool.name === 'merge_pools').inputSchema.properties.outputDir);
-  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.poolPath);
-  assert.ok(tools.find(tool => tool.name === 'enrich_metadata').inputSchema.properties.onlyMissing);
+  assert.ok(tools.find((tool) => tool.name === 'merge_pools').inputSchema.properties.outputDir);
+  assert.ok(tools.find((tool) => tool.name === 'enrich_metadata').inputSchema.properties.poolPath);
+  assert.ok(
+    tools.find((tool) => tool.name === 'enrich_metadata').inputSchema.properties.onlyMissing
+  );
 }
 
 async function testMcpPoolWorkflowTools(env) {
@@ -438,14 +475,45 @@ async function testMcpPoolWorkflowTools(env) {
     writeResultFiles(buildFixturePool(), poolDir, { mode: 'test', outputDir: poolDir });
     const poolPath = join(poolDir, 'literature_pool.json');
 
-    const responses = await interactWithMcp([
-      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
-      { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
-      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } } },
-      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'enrich_metadata', arguments: { poolPath, fields: 'abstract', onlyMissing: true, checkpointInterval: 0, concurrency: 1 } } }
-    ], env);
+    const responses = await interactWithMcp(
+      [
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2024-11-05',
+            capabilities: {},
+            clientInfo: { name: 'acceptance-test', version: '1.0.0' },
+          },
+        },
+        { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { name: 'merge_pools', arguments: { inputs: [poolDir], outputDir: mergedDir } },
+        },
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'tools/call',
+          params: {
+            name: 'enrich_metadata',
+            arguments: {
+              poolPath,
+              fields: 'abstract',
+              onlyMissing: true,
+              checkpointInterval: 0,
+              concurrency: 1,
+            },
+          },
+        },
+      ],
+      env
+    );
 
-    const byId = new Map(responses.map(response => [response.id, response]));
+    const byId = new Map(responses.map((response) => [response.id, response]));
     assert.equal(byId.get(2).result.structuredContent.papers.length, 1);
     assert.ok(byId.get(3).result.structuredContent.metadataSummary);
     assert.ok(existsSync(join(mergedDir, 'search_meta.json')));
@@ -465,7 +533,7 @@ async function runCliNetworkTest(args, env) {
       encoding: 'utf-8',
       timeout: NETWORK_TIMEOUT_MS,
       stdio: 'pipe',
-      env: { ...process.env, ...env }
+      env: { ...process.env, ...env },
     });
 
     const outputDir = findNewestOutputDir(tempDir);
@@ -489,11 +557,37 @@ async function runCliNetworkTest(args, env) {
 }
 
 async function runMcpNetworkTest(env) {
-  const responses = await interactWithMcp([
-    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1.0.0' } } },
-    { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
-    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_literature', arguments: { query: 'natural language processing', limit: 2, yearStart: 2022, searchScope: 'title-abstract' } } }
-  ], env, NETWORK_TIMEOUT_MS);
+  const responses = await interactWithMcp(
+    [
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'acceptance-test', version: '1.0.0' },
+        },
+      },
+      { jsonrpc: '2.0', method: 'notifications/initialized', params: {} },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'search_literature',
+          arguments: {
+            query: 'natural language processing',
+            limit: 2,
+            yearStart: 2022,
+            searchScope: 'title-abstract',
+          },
+        },
+      },
+    ],
+    env,
+    NETWORK_TIMEOUT_MS
+  );
 
   const toolResult = responses[1].result;
   assert.ok(toolResult.structuredContent);
@@ -524,7 +618,7 @@ function buildFixturePool() {
       afterDedup: 2,
       afterFilter: 2,
       finalCount: 1,
-      engineStats: [{ engine: 'OpenAlex', status: 'success', totalPapers: 1 }]
+      engineStats: [{ engine: 'OpenAlex', status: 'success', totalPapers: 1 }],
     },
     papers: [
       {
@@ -549,31 +643,35 @@ function buildFixturePool() {
             is_oa: true,
             confidence: 0.8,
             reason: 'Fixture repository PDF.',
-            rank: 1
-          }
+            rank: 1,
+          },
         ],
         abstract: 'An example abstract.',
         keywords: ['machine learning', 'classification'],
         source: 'openalex',
-        citation_count: 12
-      }
-    ]
+        citation_count: 12,
+      },
+    ],
   };
 }
 
 function findNewestOutputDir(dir) {
   const directories = readdirSync(dir, { withFileTypes: true })
-    .filter(item => item.isDirectory())
-    .map(item => join(dir, item.name));
+    .filter((item) => item.isDirectory())
+    .map((item) => join(dir, item.name));
   return directories.sort().at(-1) || null;
 }
 
 function loadKeyEnv() {
   const env = {};
-  if (process.env.LIT_SEARCH_S2_API_KEY) env.LIT_SEARCH_S2_API_KEY = process.env.LIT_SEARCH_S2_API_KEY;
-  if (process.env.LIT_SEARCH_OPENALEX_API_KEY) env.LIT_SEARCH_OPENALEX_API_KEY = process.env.LIT_SEARCH_OPENALEX_API_KEY;
-  if (process.env.LIT_SEARCH_CROSSREF_MAILTO) env.LIT_SEARCH_CROSSREF_MAILTO = process.env.LIT_SEARCH_CROSSREF_MAILTO;
-  if (process.env.LIT_SEARCH_CORE_API_KEY) env.LIT_SEARCH_CORE_API_KEY = process.env.LIT_SEARCH_CORE_API_KEY;
+  if (process.env.LIT_SEARCH_S2_API_KEY)
+    env.LIT_SEARCH_S2_API_KEY = process.env.LIT_SEARCH_S2_API_KEY;
+  if (process.env.LIT_SEARCH_OPENALEX_API_KEY)
+    env.LIT_SEARCH_OPENALEX_API_KEY = process.env.LIT_SEARCH_OPENALEX_API_KEY;
+  if (process.env.LIT_SEARCH_CROSSREF_MAILTO)
+    env.LIT_SEARCH_CROSSREF_MAILTO = process.env.LIT_SEARCH_CROSSREF_MAILTO;
+  if (process.env.LIT_SEARCH_CORE_API_KEY)
+    env.LIT_SEARCH_CORE_API_KEY = process.env.LIT_SEARCH_CORE_API_KEY;
 
   if (!hasAnyKeys(env) && existsSync(localKeyFile)) {
     const parsed = JSON.parse(readFileSync(localKeyFile, 'utf-8'));
@@ -599,7 +697,7 @@ async function interactWithMcp(messages, env, timeoutMs = 30000) {
   const child = spawn(process.execPath, [mcpEntry], {
     cwd: process.cwd(),
     stdio: ['pipe', 'pipe', 'inherit'],
-    env: { ...process.env, ...env }
+    env: { ...process.env, ...env },
   });
 
   let buffer = Buffer.alloc(0);
@@ -627,10 +725,10 @@ async function interactWithMcp(messages, env, timeoutMs = 30000) {
       reject(new Error(`MCP response timeout (${timeoutMs}ms)`));
     }, timeoutMs);
 
-    child.stdout.on('data', data => {
+    child.stdout.on('data', (data) => {
       buffer = Buffer.concat([buffer, data]);
       readMessages();
-      const expectedResponses = messages.filter(message => message.id !== undefined).length;
+      const expectedResponses = messages.filter((message) => message.id !== undefined).length;
       if (responses.length >= expectedResponses) {
         clearTimeout(timer);
         child.kill();
@@ -638,7 +736,7 @@ async function interactWithMcp(messages, env, timeoutMs = 30000) {
       }
     });
 
-    child.on('error', error => {
+    child.on('error', (error) => {
       clearTimeout(timer);
       reject(error);
     });
@@ -650,7 +748,7 @@ async function interactWithMcp(messages, env, timeoutMs = 30000) {
 }
 
 function printSummary(results) {
-  const passed = results.filter(item => item.ok).length;
+  const passed = results.filter((item) => item.ok).length;
   const failed = results.length - passed;
   console.log(`\n${chalk.bold('-'.repeat(64))}`);
   console.log(chalk.bold(`Passed: ${passed}/${results.length}`));
@@ -658,7 +756,7 @@ function printSummary(results) {
   console.log('-'.repeat(64));
 }
 
-main().catch(error => {
+main().catch((error) => {
   console.error(error);
   process.exit(1);
 });

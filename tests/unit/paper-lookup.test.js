@@ -8,11 +8,20 @@
 //  - mergeHits: completeness-based primary selection, identifier merging
 
 import {
-  detectInputType, normalizeDoi, normalizeTitle, lookupPaper
+  detectInputType,
+  normalizeDoi,
+  normalizeTitle,
+  lookupPaper,
 } from '../../lib/paper-lookup.js';
 import { LitSearchError, ErrorCode } from '../../lib/errors.js';
 import {
-  suite, test, assertEqual, assertDeepEqual, assertOk, assertFalsy, assertTruthy
+  suite,
+  test,
+  assertEqual,
+  assertDeepEqual,
+  assertOk,
+  assertFalsy,
+  assertTruthy,
 } from '../test-runner.js';
 
 suite('paper-lookup: detectInputType', () => {
@@ -63,7 +72,10 @@ suite('paper-lookup: normalizeDoi', () => {
 
 suite('paper-lookup: normalizeTitle', () => {
   test('collapses whitespace', () => {
-    assertEqual(normalizeTitle('  Attention   is   all   you   need  '), 'Attention is all you need');
+    assertEqual(
+      normalizeTitle('  Attention   is   all   you   need  '),
+      'Attention is all you need'
+    );
   });
   test('handles null/empty', () => {
     assertEqual(normalizeTitle(null), '');
@@ -112,14 +124,14 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
       if (step === null) return null;
       if (step instanceof Error) throw step;
       if (step && step.__delayMs) {
-        await new Promise(r => setTimeout(r, step.__delayMs));
+        await new Promise((r) => setTimeout(r, step.__delayMs));
         return step.__value;
       }
       return step;
     };
     return {
       client: { [method]: impl },
-      calls
+      calls,
     };
   }
 
@@ -130,10 +142,14 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
     return async function customLookup({ doi, title, sources }) {
       const inputType = doi ? 'doi' : 'title';
       const target = doi ? normalizeDoi(doi) : title;
-      const list = sources || (inputType === 'doi'
-        ? ['openalex', 'semantic-scholar', 'crossref']
-        : ['openalex', 'semantic-scholar', 'arxiv']);
-      const tasks = list.map(s => clients[s][inputType === 'doi' ? 'lookupByDoi' : 'lookupByTitle'](target, {}));
+      const list =
+        sources ||
+        (inputType === 'doi'
+          ? ['openalex', 'semantic-scholar', 'crossref']
+          : ['openalex', 'semantic-scholar', 'arxiv']);
+      const tasks = list.map((s) =>
+        clients[s][inputType === 'doi' ? 'lookupByDoi' : 'lookupByTitle'](target, {})
+      );
       const settled = await Promise.allSettled(tasks);
       const hits = [];
       const failures = [];
@@ -143,17 +159,29 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
         else if (r.status === 'rejected') {
           const e = r.reason;
           if (!(e && e.status === 404)) {
-            failures.push({ source: list[i], code: e?.code || 'INTERNAL_ERROR', message: e?.message || '' });
+            failures.push({
+              source: list[i],
+              code: e?.code || 'INTERNAL_ERROR',
+              message: e?.message || '',
+            });
           }
         }
       }
       if (hits.length === 0) {
-        throw new LitSearchError('NOT_FOUND', 'not found', { inputType, target, sources: list, failures });
+        throw new LitSearchError('NOT_FOUND', 'not found', {
+          inputType,
+          target,
+          sources: list,
+          failures,
+        });
       }
       // Pick most complete
       const ranked = [...hits].sort((a, b) => completeness(b.paper) - completeness(a.paper));
-      const merged = { ...ranked[0].paper, _lookup: { inputType, target, sources: hits.map(h => h.source), failures } };
-      return { paper: merged, sources: hits.map(h => h.source), failures };
+      const merged = {
+        ...ranked[0].paper,
+        _lookup: { inputType, target, sources: hits.map((h) => h.source), failures },
+      };
+      return { paper: merged, sources: hits.map((h) => h.source), failures };
     };
   }
 
@@ -168,9 +196,13 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
 
   test('DOI lookup: returns first non-null result', async () => {
     const clients = {
-      openalex: { lookupByDoi: async () => ({ title: 'From OpenAlex', doi: '10.1/x', year: 2020 }) },
+      openalex: {
+        lookupByDoi: async () => ({ title: 'From OpenAlex', doi: '10.1/x', year: 2020 }),
+      },
       'semantic-scholar': { lookupByDoi: async () => null },
-      crossref: { lookupByDoi: async () => ({ title: 'From CrossRef', doi: '10.1/x', year: 2020 }) }
+      crossref: {
+        lookupByDoi: async () => ({ title: 'From CrossRef', doi: '10.1/x', year: 2020 }),
+      },
     };
     const lookup = makeLookupModuleWithClients(clients);
     const r = await lookup({ doi: '10.1/x' });
@@ -179,11 +211,28 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
   });
 
   test('DOI lookup: ALL 404 → NOT_FOUND with sources listed in details', async () => {
-    const e404 = (s) => { const e = new Error(`not found in ${s}`); e.status = 404; e.source = s; throw e; };
+    const e404 = (s) => {
+      const e = new Error(`not found in ${s}`);
+      e.status = 404;
+      e.source = s;
+      throw e;
+    };
     const clients = {
-      openalex: { lookupByDoi: async () => { throw e404('openalex'); } },
-      'semantic-scholar': { lookupByDoi: async () => { throw e404('semantic-scholar'); } },
-      crossref: { lookupByDoi: async () => { throw e404('crossref'); } }
+      openalex: {
+        lookupByDoi: async () => {
+          throw e404('openalex');
+        },
+      },
+      'semantic-scholar': {
+        lookupByDoi: async () => {
+          throw e404('semantic-scholar');
+        },
+      },
+      crossref: {
+        lookupByDoi: async () => {
+          throw e404('crossref');
+        },
+      },
     };
     const lookup = makeLookupModuleWithClients(clients);
     try {
@@ -196,11 +245,21 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
   });
 
   test('DOI lookup: 404 in one source falls through to next', async () => {
-    const e404 = () => { const e = new Error('not found'); e.status = 404; throw e; };
+    const e404 = () => {
+      const e = new Error('not found');
+      e.status = 404;
+      throw e;
+    };
     const clients = {
-      openalex: { lookupByDoi: async () => { throw e404(); } },
-      'semantic-scholar': { lookupByDoi: async () => ({ title: 'Found in S2', doi: '10.1/x', year: 2021 }) },
-      crossref: { lookupByDoi: async () => null }
+      openalex: {
+        lookupByDoi: async () => {
+          throw e404();
+        },
+      },
+      'semantic-scholar': {
+        lookupByDoi: async () => ({ title: 'Found in S2', doi: '10.1/x', year: 2021 }),
+      },
+      crossref: { lookupByDoi: async () => null },
     };
     const lookup = makeLookupModuleWithClients(clients);
     const r = await lookup({ doi: '10.1/x' });
@@ -208,11 +267,20 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
   });
 
   test('DOI lookup: non-404 failure recorded in failures (not in sources)', async () => {
-    const e500 = () => { const e = new Error('upstream broken'); e.status = 500; e.source = 'openalex'; throw e; };
+    const e500 = () => {
+      const e = new Error('upstream broken');
+      e.status = 500;
+      e.source = 'openalex';
+      throw e;
+    };
     const clients = {
-      openalex: { lookupByDoi: async () => { throw e500(); } },
+      openalex: {
+        lookupByDoi: async () => {
+          throw e500();
+        },
+      },
       'semantic-scholar': { lookupByDoi: async () => ({ title: 'S2 result', doi: '10.1/x' }) },
-      crossref: { lookupByDoi: async () => null }
+      crossref: { lookupByDoi: async () => null },
     };
     const lookup = makeLookupModuleWithClients(clients);
     const r = await lookup({ doi: '10.1/x' });
@@ -225,9 +293,24 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
   test('Title lookup: defaults to openalex + semantic-scholar + arxiv', async () => {
     const seenSources = new Set();
     const clients = {
-      openalex: { lookupByTitle: async () => { seenSources.add('openalex'); return null; } },
-      'semantic-scholar': { lookupByTitle: async () => { seenSources.add('semantic-scholar'); return null; } },
-      arxiv: { lookupByTitle: async () => { seenSources.add('arxiv'); return { title: 'X', year: 2022 }; } }
+      openalex: {
+        lookupByTitle: async () => {
+          seenSources.add('openalex');
+          return null;
+        },
+      },
+      'semantic-scholar': {
+        lookupByTitle: async () => {
+          seenSources.add('semantic-scholar');
+          return null;
+        },
+      },
+      arxiv: {
+        lookupByTitle: async () => {
+          seenSources.add('arxiv');
+          return { title: 'X', year: 2022 };
+        },
+      },
     };
     const lookup = makeLookupModuleWithClients(clients);
     await lookup({ title: 'X' });
@@ -236,9 +319,24 @@ suite('paper-lookup: lookupPaper (injected stub clients)', () => {
 
   test('Completeness: picks the richer source as primary', async () => {
     const clients = {
-      openalex: { lookupByDoi: async () => ({ title: 'T', doi: '10.1/x', year: 2020, abstract: 'long abstract' }) },
-      'semantic-scholar': { lookupByDoi: async () => ({ title: 'T', doi: '10.1/x', year: 2020, authors: ['A', 'B'], citationCount: 10 }) },
-      crossref: { lookupByDoi: async () => null }
+      openalex: {
+        lookupByDoi: async () => ({
+          title: 'T',
+          doi: '10.1/x',
+          year: 2020,
+          abstract: 'long abstract',
+        }),
+      },
+      'semantic-scholar': {
+        lookupByDoi: async () => ({
+          title: 'T',
+          doi: '10.1/x',
+          year: 2020,
+          authors: ['A', 'B'],
+          citationCount: 10,
+        }),
+      },
+      crossref: { lookupByDoi: async () => null },
     };
     const lookup = makeLookupModuleWithClients(clients);
     const r = await lookup({ doi: '10.1/x' });

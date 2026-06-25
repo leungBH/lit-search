@@ -3,7 +3,15 @@
 import { renderBibTeX } from '../../lib/output.js';
 import { writeResultFiles, readLiteraturePool, resolvePoolPath } from '../../lib/output-files.js';
 import { normalizePdfCandidates } from '../../lib/pdf-candidates.js';
-import { suite, test, assertEqual, assertOk, assertMatch, assertFalsy, assertTruthy } from '../test-runner.js';
+import {
+  suite,
+  test,
+  assertEqual,
+  assertOk,
+  assertMatch,
+  assertFalsy,
+  assertTruthy,
+} from '../test-runner.js';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,9 +30,9 @@ suite('BibTeX renderer: required fields', () => {
           year: 2024,
           journal: 'Journal of Examples',
           doi: '10.1000/example',
-          keywords: ['machine learning', 'classification']
-        }
-      ]
+          keywords: ['machine learning', 'classification'],
+        },
+      ],
     };
     const bib = renderBibTeX(pool);
     assertMatch(bib, /@article\{Smith2024,/);
@@ -48,9 +56,9 @@ suite('BibTeX renderer: required fields', () => {
           doi: '10.1/x',
           pdf_candidates: [{ url: 'http://x' }],
           pdfurl: 'http://x',
-          citation_count: 5
-        }
-      ]
+          citation_count: 5,
+        },
+      ],
     };
     const bib = renderBibTeX(pool);
     assertFalsy(bib.match(/pdfurl/i), 'pdfurl should not leak');
@@ -61,9 +69,15 @@ suite('BibTeX renderer: required fields', () => {
   test('handles special characters in title (curly braces, ampersands)', () => {
     const pool = {
       metadata: {},
-      papers: [{
-        seq_id: 1, citation_key: 'X', title: 'A & B: {the test}', author: 'A', year: 2020
-      }]
+      papers: [
+        {
+          seq_id: 1,
+          citation_key: 'X',
+          title: 'A & B: {the test}',
+          author: 'A',
+          year: 2020,
+        },
+      ],
     };
     const bib = renderBibTeX(pool);
     // BibTeX must escape & as \& or wrap in braces
@@ -90,9 +104,9 @@ suite('BibTeX renderer: required fields', () => {
           year: 2017,
           doi: '10.5555/x',
           arxiv_id: '1706.03762',
-          primary_category: 'cs.CL'
-        }
-      ]
+          primary_category: 'cs.CL',
+        },
+      ],
     };
     const bib = renderBibTeX(pool);
     assertMatch(bib, /eprint = \{1706\.03762\}/);
@@ -103,9 +117,36 @@ suite('BibTeX renderer: required fields', () => {
 suite('PDF candidate normalization', () => {
   test('sorts candidates by confidence desc', () => {
     const norm = normalizePdfCandidates([
-      { url: 'https://a.example/x.pdf', source: 'a', provider: 'a', access_type: 'publisher_oa_pdf', confidence: 0.3, license: null, is_oa: false, reason: '' },
-      { url: 'https://b.example/x.pdf', source: 'b', provider: 'b', access_type: 'arxiv', confidence: 0.9, license: null, is_oa: true, reason: '' },
-      { url: 'https://c.example/x.pdf', source: 'c', provider: 'c', access_type: 'repository', confidence: 0.6, license: null, is_oa: true, reason: '' }
+      {
+        url: 'https://a.example/x.pdf',
+        source: 'a',
+        provider: 'a',
+        access_type: 'publisher_oa_pdf',
+        confidence: 0.3,
+        license: null,
+        is_oa: false,
+        reason: '',
+      },
+      {
+        url: 'https://b.example/x.pdf',
+        source: 'b',
+        provider: 'b',
+        access_type: 'arxiv',
+        confidence: 0.9,
+        license: null,
+        is_oa: true,
+        reason: '',
+      },
+      {
+        url: 'https://c.example/x.pdf',
+        source: 'c',
+        provider: 'c',
+        access_type: 'repository',
+        confidence: 0.6,
+        license: null,
+        is_oa: true,
+        reason: '',
+      },
     ]);
     assertEqual(norm[0].url, 'https://b.example/x.pdf');
     assertEqual(norm[1].url, 'https://c.example/x.pdf');
@@ -114,8 +155,26 @@ suite('PDF candidate normalization', () => {
 
   test('assigns rank 1..N', () => {
     const norm = normalizePdfCandidates([
-      { url: 'https://a.example/x.pdf', source: 'a', provider: 'a', access_type: 'publisher_oa_pdf', confidence: 0.5, license: null, is_oa: false, reason: '' },
-      { url: 'https://b.example/x.pdf', source: 'b', provider: 'b', access_type: 'repository', confidence: 0.5, license: null, is_oa: false, reason: '' }
+      {
+        url: 'https://a.example/x.pdf',
+        source: 'a',
+        provider: 'a',
+        access_type: 'publisher_oa_pdf',
+        confidence: 0.5,
+        license: null,
+        is_oa: false,
+        reason: '',
+      },
+      {
+        url: 'https://b.example/x.pdf',
+        source: 'b',
+        provider: 'b',
+        access_type: 'repository',
+        confidence: 0.5,
+        license: null,
+        is_oa: false,
+        reason: '',
+      },
     ]);
     assertEqual(norm[0].rank, 1);
     assertEqual(norm[1].rank, 2);
@@ -123,10 +182,23 @@ suite('PDF candidate normalization', () => {
 
   test('normalizes access_type aliases', () => {
     const norm = normalizePdfCandidates([
-      { url: 'https://x.example/x.pdf', source: 'crossref', provider: 'x', access_type: 'crossref_pdf_link', confidence: 0.5, license: null, is_oa: false, reason: '' }
+      {
+        url: 'https://x.example/x.pdf',
+        source: 'crossref',
+        provider: 'x',
+        access_type: 'crossref_pdf_link',
+        confidence: 0.5,
+        license: null,
+        is_oa: false,
+        reason: '',
+      },
     ]);
     // Should be a known access_type
-    assertTruthy(['crossref_pdf_link', 'arxiv', 'repository', 'publisher_oa_pdf', 'unknown'].includes(norm[0].access_type));
+    assertTruthy(
+      ['crossref_pdf_link', 'arxiv', 'repository', 'publisher_oa_pdf', 'unknown'].includes(
+        norm[0].access_type
+      )
+    );
   });
 
   test('handles empty input', () => {
@@ -136,9 +208,28 @@ suite('PDF candidate normalization', () => {
 
   test('strips null/undefined fields and only keeps known keys', () => {
     const norm = normalizePdfCandidates([
-      { url: 'https://x.example/x.pdf', source: 'a', provider: 'a', access_type: 'publisher_oa_pdf', confidence: 0.5, license: null, is_oa: false, reason: '' }
+      {
+        url: 'https://x.example/x.pdf',
+        source: 'a',
+        provider: 'a',
+        access_type: 'publisher_oa_pdf',
+        confidence: 0.5,
+        license: null,
+        is_oa: false,
+        reason: '',
+      },
     ]);
-    const known = new Set(['url', 'source', 'provider', 'access_type', 'license', 'is_oa', 'confidence', 'reason', 'rank']);
+    const known = new Set([
+      'url',
+      'source',
+      'provider',
+      'access_type',
+      'license',
+      'is_oa',
+      'confidence',
+      'reason',
+      'rank',
+    ]);
     for (const k of Object.keys(norm[0])) {
       assertTruthy(known.has(k), `unexpected key: ${k}`);
     }
@@ -146,8 +237,26 @@ suite('PDF candidate normalization', () => {
 
   test('regression: arxiv candidates rank highest', () => {
     const norm = normalizePdfCandidates([
-      { url: 'https://x.example/p.pdf', source: 'crossref', provider: 'x', access_type: 'publisher_oa_pdf', confidence: 0.5, license: null, is_oa: false, reason: '' },
-      { url: 'https://arxiv.org/pdf/1234.5678.pdf', source: 'arxiv', provider: 'arxiv', access_type: 'arxiv', confidence: 0.98, license: null, is_oa: true, reason: '' }
+      {
+        url: 'https://x.example/p.pdf',
+        source: 'crossref',
+        provider: 'x',
+        access_type: 'publisher_oa_pdf',
+        confidence: 0.5,
+        license: null,
+        is_oa: false,
+        reason: '',
+      },
+      {
+        url: 'https://arxiv.org/pdf/1234.5678.pdf',
+        source: 'arxiv',
+        provider: 'arxiv',
+        access_type: 'arxiv',
+        confidence: 0.98,
+        license: null,
+        is_oa: true,
+        reason: '',
+      },
     ]);
     assertEqual(norm[0].url, 'https://arxiv.org/pdf/1234.5678.pdf');
     assertEqual(norm[0].rank, 1);
@@ -160,10 +269,18 @@ suite('Result file output round-trip', () => {
     try {
       const pool = {
         metadata: { query: 'rt' },
-        papers: [{
-          seq_id: 1, citation_key: 'X1', title: 'RT', author: 'A', year: 2020,
-          doi: '10.1/rt', identifiers: { doi: '10.1/rt' }, pdf_candidates: []
-        }]
+        papers: [
+          {
+            seq_id: 1,
+            citation_key: 'X1',
+            title: 'RT',
+            author: 'A',
+            year: 2020,
+            doi: '10.1/rt',
+            identifiers: { doi: '10.1/rt' },
+            pdf_candidates: [],
+          },
+        ],
       };
       const files = writeResultFiles(pool, tmp, { mode: 'test', outputDir: tmp });
       assertOk(existsSync(files.metaFile));
@@ -191,7 +308,10 @@ suite('Result file output round-trip', () => {
   test('search_meta.json includes version and file manifest', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'lit-search-meta-'));
     try {
-      const files = writeResultFiles({ metadata: {}, papers: [] }, tmp, { mode: 'test', outputDir: tmp });
+      const files = writeResultFiles({ metadata: {}, papers: [] }, tmp, {
+        mode: 'test',
+        outputDir: tmp,
+      });
       const meta = JSON.parse(readFileSync(files.metaFile, 'utf-8'));
       assertMatch(meta.version, /^\d+\.\d+\.\d+/);
       assertOk(meta.files);
@@ -216,7 +336,11 @@ suite('Result file output round-trip', () => {
 
   test('resolvePoolPath: missing directory throws a clear error', () => {
     let thrown = null;
-    try { resolvePoolPath('/nonexistent-dir-xyz'); } catch (e) { thrown = e; }
+    try {
+      resolvePoolPath('/nonexistent-dir-xyz');
+    } catch (e) {
+      thrown = e;
+    }
     assertTruthy(thrown);
     assertMatch(thrown.message, /Cannot find literature_pool\.json/);
   });

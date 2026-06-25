@@ -34,9 +34,9 @@ function makeStubSearch(captured) {
           source: 'mock',
           identifiers: {},
           pdf_candidates: [],
-          references: []
-        }
-      ]
+          references: [],
+        },
+      ],
     };
   };
 }
@@ -50,7 +50,11 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
       const outDir = join(project, 'out');
       const captured = [];
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, limit: 3, _searchPapers: makeStubSearch(captured) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        limit: 3,
+        _searchPapers: makeStubSearch(captured),
+      });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
       assertEqual(pool.papers.length, 1);
       assertEqual(pool.unresolvedCitations.length, 0);
@@ -70,7 +74,10 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
       const outDir = join(project, 'out');
       const captured = [];
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, _searchPapers: makeStubSearch(captured) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        _searchPapers: makeStubSearch(captured),
+      });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
       assertEqual(pool.papers.length, 114, 'should resolve all 114 lines');
       assertEqual(pool.unresolvedCitations.length, 0);
@@ -84,11 +91,17 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
     const project = makeTempDir();
     try {
       const inputFile = join(project, 'input.txt');
-      writeFileSync(inputFile, 'Attention Is All You Need\nBERT: Pre-training of Deep Bidirectional Transformers\n');
+      writeFileSync(
+        inputFile,
+        'Attention Is All You Need\nBERT: Pre-training of Deep Bidirectional Transformers\n'
+      );
       const outDir = join(project, 'out');
       const captured = [];
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, _searchPapers: makeStubSearch(captured) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        _searchPapers: makeStubSearch(captured),
+      });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
       assertEqual(pool.papers.length, 2);
       assertEqual(pool.unresolvedCitations.length, 0);
@@ -101,13 +114,17 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
     const project = makeTempDir();
     try {
       const inputFile = join(project, 'input.bib');
-      writeFileSync(inputFile,
+      writeFileSync(
+        inputFile,
         '@article{a, title={Paper A}, year={2017}}\n@article{b, title={Paper B}, year={2019}}\n'
       );
       const outDir = join(project, 'out');
       const captured = [];
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, _searchPapers: makeStubSearch(captured) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        _searchPapers: makeStubSearch(captured),
+      });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
       assertEqual(pool.papers.length, 2);
     } finally {
@@ -142,7 +159,10 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
       writeFileSync(inputFile, 'Some Title\n');
       const outDir = join(project, 'out');
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, _searchPapers: makeStubSearch([]) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        _searchPapers: makeStubSearch([]),
+      });
       assertOk(existsSync(join(outDir, 'search_meta.json')));
       assertOk(existsSync(join(outDir, 'literature_pool.json')));
       assertOk(existsSync(join(outDir, 'references.bib')));
@@ -159,7 +179,10 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
       const outDir = join(project, 'out');
       const captured = [];
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, _searchPapers: makeStubSearch(captured) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        _searchPapers: makeStubSearch(captured),
+      });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
       assertEqual(pool.papers.length, 2);
     } finally {
@@ -175,7 +198,10 @@ suite('resolveCitationsFile integration: regression for v1.4 parser bugs', () =>
       const outDir = join(project, 'out');
       const captured = [];
       const { resolveCitationsFile } = await loadResolveModule();
-      await resolveCitationsFile(inputFile, { outputDir: outDir, _searchPapers: makeStubSearch(captured) });
+      await resolveCitationsFile(inputFile, {
+        outputDir: outDir,
+        _searchPapers: makeStubSearch(captured),
+      });
       const pool = JSON.parse(readFileSync(join(outDir, 'literature_pool.json'), 'utf-8'));
       assertEqual(pool.papers.length, 2);
     } finally {

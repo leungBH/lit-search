@@ -7,25 +7,44 @@
 // suite without slowing CI.
 
 import {
-  getStoredApiKeys, getEnvApiKeys, getResolvedApiKeys,
-  saveApiKeys, summarizeApiKeySources
+  getStoredApiKeys,
+  getEnvApiKeys,
+  getResolvedApiKeys,
+  saveApiKeys,
+  summarizeApiKeySources,
 } from '../../lib/app-config.js';
 import { resolveLogger, consoleLogger, silentLogger } from '../../lib/logger.js';
 import { generateOutputFolderName } from '../../lib/output-files.js';
 import {
-  buildPdfCandidate, mergePdfCandidates, selectBestPdfCandidate,
-  getDownloadablePdfCandidates, getBestPdfCandidateUrl
+  buildPdfCandidate,
+  mergePdfCandidates,
+  selectBestPdfCandidate,
+  getDownloadablePdfCandidates,
+  getBestPdfCandidateUrl,
 } from '../../lib/pdf-candidates.js';
 import { generateQueries } from '../../lib/search.js';
-import { suite, test, assertEqual, assertDeepEqual, assertMatch, assertOk, assertFalsy, assertTruthy } from '../test-runner.js';
+import {
+  suite,
+  test,
+  assertEqual,
+  assertDeepEqual,
+  assertMatch,
+  assertOk,
+  assertFalsy,
+  assertTruthy,
+} from '../test-runner.js';
 
 // Helper: fake `conf` instance. Just a Map with `.get`, `.set`, and a `.path`.
 function makeFakeConfig(initial = {}) {
   const store = new Map(Object.entries(initial));
   return {
     path: '/tmp/lit-search-test/config.json',
-    get(key) { return store.get(key); },
-    set(key, value) { store.set(key, value); }
+    get(key) {
+      return store.get(key);
+    },
+    set(key, value) {
+      store.set(key, value);
+    },
   };
 }
 
@@ -42,7 +61,7 @@ suite('app-config: getEnvApiKeys (env var resolution)', () => {
       LIT_SEARCH_CROSSREF_MAILTO: 'me@x.com',
       LIT_SEARCH_CORE_API_KEY: 'core-x',
       LIT_SEARCH_NCBI_API_KEY: 'ncbi-x',
-      LIT_SEARCH_UNPAYWALL_EMAIL: 'me@x.com'
+      LIT_SEARCH_UNPAYWALL_EMAIL: 'me@x.com',
     });
     assertEqual(out.s2, 's2-x');
     assertEqual(out.openalex, 'oa-x');
@@ -59,7 +78,7 @@ suite('app-config: getEnvApiKeys (env var resolution)', () => {
       CROSSREF_MAILTO: 'legacy@x.com',
       CORE_API_KEY: 'core-legacy',
       NCBI_API_KEY: 'ncbi-legacy',
-      UNPAYWALL_EMAIL: 'legacy@x.com'
+      UNPAYWALL_EMAIL: 'legacy@x.com',
     });
     assertEqual(out.s2, 's2-legacy');
     assertEqual(out.openalex, 'oa-legacy');
@@ -74,7 +93,7 @@ suite('app-config: getEnvApiKeys (env var resolution)', () => {
       LIT_SEARCH_S2_API_KEY: 's2-canonical',
       SEMANTIC_SCHOLAR_API_KEY: 's2-legacy',
       OPENALEX_API_KEY: 'oa-legacy',
-      LIT_SEARCH_OPENALEX_API_KEY: 'oa-canonical'
+      LIT_SEARCH_OPENALEX_API_KEY: 'oa-canonical',
     });
     assertEqual(out.s2, 's2-canonical');
     assertEqual(out.openalex, 'oa-canonical');
@@ -84,7 +103,7 @@ suite('app-config: getEnvApiKeys (env var resolution)', () => {
     const out = getEnvApiKeys({
       LIT_SEARCH_S2_API_KEY: '',
       LIT_SEARCH_OPENALEX_API_KEY: '   ',
-      LIT_SEARCH_CROSSREF_MAILTO: '\t'
+      LIT_SEARCH_CROSSREF_MAILTO: '\t',
     });
     assertFalsy(out.s2);
     assertFalsy(out.openalex);
@@ -264,7 +283,7 @@ suite('pdf-candidates: buildPdfCandidate (direct, not via normalize)', () => {
   test('explicit access_type wins over inference', () => {
     const c = buildPdfCandidate({
       url: 'https://arxiv.org/pdf/1234.pdf',
-      access_type: 'repository'
+      access_type: 'repository',
     });
     assertEqual(c.access_type, 'repository');
   });
@@ -284,7 +303,7 @@ suite('pdf-candidates: buildPdfCandidate (direct, not via normalize)', () => {
   test('explicit is_oa overrides inference', () => {
     const c = buildPdfCandidate({
       url: 'https://arxiv.org/pdf/1234.pdf',
-      is_oa: false
+      is_oa: false,
     });
     assertEqual(c.is_oa, false);
   });
@@ -294,9 +313,21 @@ suite('pdf-candidates: buildPdfCandidate (direct, not via normalize)', () => {
     // values in the (0, 1] range are the "fraction" branch and get
     // rounded to 2 decimal places. (1.0 itself is the boundary and
     // falls into the "percentage" branch — see the next test.)
-    const a = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 0.5 });
-    const b = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 0.123 });
-    const c = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 0.999 });
+    const a = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 0.5,
+    });
+    const b = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 0.123,
+    });
+    const c = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 0.999,
+    });
     assertEqual(a.confidence, 0.5);
     assertEqual(b.confidence, 0.12, '0.123 rounds to 0.12');
     assertEqual(c.confidence, 1, '0.999 rounds to 1.00');
@@ -306,10 +337,26 @@ suite('pdf-candidates: buildPdfCandidate (direct, not via normalize)', () => {
     // Documented contract: anything > 1 is on the 0..100 scale.
     // So 1.234 means 1.234%, not 1.234. This catches a subtle but
     // intentional asymmetry in normalizeConfidence.
-    const a = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 1.234 });
-    const b = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 50 });
-    const c = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 100 });
-    const d = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 200 });
+    const a = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 1.234,
+    });
+    const b = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 50,
+    });
+    const c = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 100,
+    });
+    const d = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 200,
+    });
     assertEqual(a.confidence, 0.01, '1.234% = 0.01234 → rounds to 0.01');
     assertEqual(b.confidence, 0.5);
     assertEqual(c.confidence, 1);
@@ -317,14 +364,26 @@ suite('pdf-candidates: buildPdfCandidate (direct, not via normalize)', () => {
   });
 
   test('confidence: non-numeric falls back to 0.5', () => {
-    const c = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'repository', confidence: 'not-a-number' });
+    const c = buildPdfCandidate({
+      url: 'https://x.org/y',
+      access_type: 'repository',
+      confidence: 'not-a-number',
+    });
     assertEqual(c.confidence, 0.5);
   });
 
   test('OA/URL/license boost confidence in the absence of explicit confidence', () => {
     const base = buildPdfCandidate({ url: 'https://x.org/y', access_type: 'publisher_oa_pdf' });
-    const boosted = buildPdfCandidate({ url: 'https://x.org/y.pdf', access_type: 'publisher_oa_pdf', is_oa: true, license: 'CC-BY' });
-    assertTruthy(boosted.confidence > base.confidence, `expected boosted (${boosted.confidence}) > base (${base.confidence})`);
+    const boosted = buildPdfCandidate({
+      url: 'https://x.org/y.pdf',
+      access_type: 'publisher_oa_pdf',
+      is_oa: true,
+      license: 'CC-BY',
+    });
+    assertTruthy(
+      boosted.confidence > base.confidence,
+      `expected boosted (${boosted.confidence}) > base (${base.confidence})`
+    );
   });
 
   test('rank is always 0 at build time (assigned by normalize)', () => {
@@ -336,10 +395,28 @@ suite('pdf-candidates: buildPdfCandidate (direct, not via normalize)', () => {
 suite('pdf-candidates: mergePdfCandidates', () => {
   test('merges multiple lists, dedupes by URL, ranks by score', () => {
     const listA = [
-      { url: 'https://a.example/x.pdf', access_type: 'publisher_oa_pdf', source: 'a', provider: 'a', confidence: 0.5, is_oa: false, license: null, reason: '' }
+      {
+        url: 'https://a.example/x.pdf',
+        access_type: 'publisher_oa_pdf',
+        source: 'a',
+        provider: 'a',
+        confidence: 0.5,
+        is_oa: false,
+        license: null,
+        reason: '',
+      },
     ];
     const listB = [
-      { url: 'https://arxiv.org/pdf/1234.pdf', access_type: 'arxiv', source: 'arxiv', provider: 'arxiv', confidence: 0.98, is_oa: true, license: null, reason: '' }
+      {
+        url: 'https://arxiv.org/pdf/1234.pdf',
+        access_type: 'arxiv',
+        source: 'arxiv',
+        provider: 'arxiv',
+        confidence: 0.98,
+        is_oa: true,
+        license: null,
+        reason: '',
+      },
     ];
     const merged = mergePdfCandidates(listA, listB);
     // arxiv ranked highest (priority 100 + confidence 0.98 = 100.98)
@@ -356,15 +433,46 @@ suite('pdf-candidates: mergePdfCandidates', () => {
   });
 
   test('skips null/undefined entries inside lists', () => {
-    const merged = mergePdfCandidates([null, undefined, { url: 'https://x.example/x.pdf', access_type: 'unknown', source: 'a', provider: 'a', confidence: 0.5, is_oa: false, license: null, reason: '' }]);
+    const merged = mergePdfCandidates([
+      null,
+      undefined,
+      {
+        url: 'https://x.example/x.pdf',
+        access_type: 'unknown',
+        source: 'a',
+        provider: 'a',
+        confidence: 0.5,
+        is_oa: false,
+        license: null,
+        reason: '',
+      },
+    ]);
     assertEqual(merged.length, 1);
   });
 });
 
 suite('pdf-candidates: selectBestPdfCandidate', () => {
   test('returns the highest-scored candidate', () => {
-    const a = { url: 'https://a.example/x.pdf', access_type: 'publisher_oa_pdf', source: 'a', provider: 'a', confidence: 0.5, is_oa: false, license: null, reason: '' };
-    const b = { url: 'https://arxiv.org/pdf/1234.pdf', access_type: 'arxiv', source: 'arxiv', provider: 'arxiv', confidence: 0.9, is_oa: true, license: null, reason: '' };
+    const a = {
+      url: 'https://a.example/x.pdf',
+      access_type: 'publisher_oa_pdf',
+      source: 'a',
+      provider: 'a',
+      confidence: 0.5,
+      is_oa: false,
+      license: null,
+      reason: '',
+    };
+    const b = {
+      url: 'https://arxiv.org/pdf/1234.pdf',
+      access_type: 'arxiv',
+      source: 'arxiv',
+      provider: 'arxiv',
+      confidence: 0.9,
+      is_oa: true,
+      license: null,
+      reason: '',
+    };
     const best = selectBestPdfCandidate([a, b]);
     assertEqual(best.url, 'https://arxiv.org/pdf/1234.pdf');
   });
@@ -383,10 +491,37 @@ suite('pdf-candidates: getDownloadablePdfCandidates', () => {
   test('excludes doi_landing_page and browser_fallback', () => {
     const paper = {
       pdf_candidates: [
-        { url: 'https://arxiv.org/pdf/1.pdf', access_type: 'arxiv', source: 'arxiv', provider: 'arxiv', confidence: 0.9, is_oa: true, license: null, reason: '' },
-        { url: 'https://doi.org/10.1/x', access_type: 'doi_landing_page', source: 'x', provider: 'x', confidence: 0.5, is_oa: false, license: null, reason: '' },
-        { url: 'https://fallback.example/', access_type: 'browser_fallback', source: 'x', provider: 'x', confidence: 0.5, is_oa: false, license: null, reason: '' }
-      ]
+        {
+          url: 'https://arxiv.org/pdf/1.pdf',
+          access_type: 'arxiv',
+          source: 'arxiv',
+          provider: 'arxiv',
+          confidence: 0.9,
+          is_oa: true,
+          license: null,
+          reason: '',
+        },
+        {
+          url: 'https://doi.org/10.1/x',
+          access_type: 'doi_landing_page',
+          source: 'x',
+          provider: 'x',
+          confidence: 0.5,
+          is_oa: false,
+          license: null,
+          reason: '',
+        },
+        {
+          url: 'https://fallback.example/',
+          access_type: 'browser_fallback',
+          source: 'x',
+          provider: 'x',
+          confidence: 0.5,
+          is_oa: false,
+          license: null,
+          reason: '',
+        },
+      ],
     };
     const filtered = getDownloadablePdfCandidates(paper);
     assertEqual(filtered.length, 1, 'only arxiv survives the filter');
@@ -396,8 +531,17 @@ suite('pdf-candidates: getDownloadablePdfCandidates', () => {
   test('keeps "unknown" access type (it is in the downloadables set)', () => {
     const paper = {
       pdf_candidates: [
-        { url: 'https://x.example/y.pdf', access_type: 'unknown', source: 'x', provider: 'x', confidence: 0.5, is_oa: false, license: null, reason: '' }
-      ]
+        {
+          url: 'https://x.example/y.pdf',
+          access_type: 'unknown',
+          source: 'x',
+          provider: 'x',
+          confidence: 0.5,
+          is_oa: false,
+          license: null,
+          reason: '',
+        },
+      ],
     };
     const filtered = getDownloadablePdfCandidates(paper);
     assertEqual(filtered.length, 1);
@@ -413,9 +557,27 @@ suite('pdf-candidates: getBestPdfCandidateUrl', () => {
   test('returns the URL string of the top candidate', () => {
     const paper = {
       pdf_candidates: [
-        { url: 'https://a.example/x.pdf', access_type: 'publisher_oa_pdf', source: 'a', provider: 'a', confidence: 0.5, is_oa: false, license: null, reason: '' },
-        { url: 'https://arxiv.org/pdf/1234.pdf', access_type: 'arxiv', source: 'arxiv', provider: 'arxiv', confidence: 0.98, is_oa: true, license: null, reason: '' }
-      ]
+        {
+          url: 'https://a.example/x.pdf',
+          access_type: 'publisher_oa_pdf',
+          source: 'a',
+          provider: 'a',
+          confidence: 0.5,
+          is_oa: false,
+          license: null,
+          reason: '',
+        },
+        {
+          url: 'https://arxiv.org/pdf/1234.pdf',
+          access_type: 'arxiv',
+          source: 'arxiv',
+          provider: 'arxiv',
+          confidence: 0.98,
+          is_oa: true,
+          license: null,
+          reason: '',
+        },
+      ],
     };
     assertEqual(getBestPdfCandidateUrl(paper), 'https://arxiv.org/pdf/1234.pdf');
   });

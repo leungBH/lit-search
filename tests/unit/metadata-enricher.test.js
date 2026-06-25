@@ -24,7 +24,9 @@ function makeResolvers(spec = {}) {
   const out = {};
   for (const [name, behavior] of Object.entries(spec)) {
     if (behavior?.error) {
-      out[name] = async () => { throw new Error(`resolver ${name} exploded`); };
+      out[name] = async () => {
+        throw new Error(`resolver ${name} exploded`);
+      };
     } else {
       out[name] = async () => behavior.record ?? null;
     }
@@ -53,7 +55,10 @@ suite('metadata-enricher: attempt ordering (buildAttempts shape)', () => {
   test('paper with arxiv_id only: arxivById is attempted first', async () => {
     const calls = [];
     const resolvers = {
-      arxivById: async (id) => { calls.push(['arxivById', id]); return null; }
+      arxivById: async (id) => {
+        calls.push(['arxivById', id]);
+        return null;
+      },
     };
     const pool = makePool([makePaper({ arxiv_id: '2401.01234' })]);
     await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
@@ -63,8 +68,14 @@ suite('metadata-enricher: attempt ordering (buildAttempts shape)', () => {
   test('paper with DOI: openalexByDoi THEN semanticScholarByDoi', async () => {
     const calls = [];
     const resolvers = {
-      openalexByDoi: async (doi) => { calls.push(['openalexByDoi', doi]); return null; },
-      semanticScholarByDoi: async (doi) => { calls.push(['semanticScholarByDoi', doi]); return null; }
+      openalexByDoi: async (doi) => {
+        calls.push(['openalexByDoi', doi]);
+        return null;
+      },
+      semanticScholarByDoi: async (doi) => {
+        calls.push(['semanticScholarByDoi', doi]);
+        return null;
+      },
     };
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
@@ -75,18 +86,25 @@ suite('metadata-enricher: attempt ordering (buildAttempts shape)', () => {
 
   test('paper with all signals: arxiv → openalex → s2 → openalex-id → title', async () => {
     const calls = [];
-    const noop = async (v) => { calls.push(v); return null; };
+    const noop = async (v) => {
+      calls.push(v);
+      return null;
+    };
     const resolvers = {
       arxivById: noop,
       openalexByDoi: noop,
       semanticScholarByDoi: noop,
       openalexById: noop,
-      titleSearch: noop
+      titleSearch: noop,
     };
-    const pool = makePool([makePaper({
-      arxiv_id: '2401.0', doi: '10.1/x',
-      openalex_id: 'W123', title: 'T'
-    })]);
+    const pool = makePool([
+      makePaper({
+        arxiv_id: '2401.0',
+        doi: '10.1/x',
+        openalex_id: 'W123',
+        title: 'T',
+      }),
+    ]);
     await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
     // First call is arxivById
     assertEqual(calls[0], '2401.0');
@@ -97,11 +115,26 @@ suite('metadata-enricher: attempt ordering (buildAttempts shape)', () => {
   test('paper with no identifiers, only title → titleSearch is the only attempt', async () => {
     const calls = [];
     const resolvers = {
-      arxivById: async () => { calls.push('arxiv'); return null; },
-      openalexByDoi: async () => { calls.push('oa'); return null; },
-      semanticScholarByDoi: async () => { calls.push('s2'); return null; },
-      openalexById: async () => { calls.push('oa-id'); return null; },
-      titleSearch: async () => { calls.push('title'); return null; }
+      arxivById: async () => {
+        calls.push('arxiv');
+        return null;
+      },
+      openalexByDoi: async () => {
+        calls.push('oa');
+        return null;
+      },
+      semanticScholarByDoi: async () => {
+        calls.push('s2');
+        return null;
+      },
+      openalexById: async () => {
+        calls.push('oa-id');
+        return null;
+      },
+      titleSearch: async () => {
+        calls.push('title');
+        return null;
+      },
     };
     const pool = makePool([makePaper({ title: 'Bare' })]);
     await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
@@ -116,13 +149,24 @@ suite('metadata-enricher: attempt ordering (buildAttempts shape)', () => {
 suite('metadata-enricher: scalar field enrichment', () => {
   test('openalexByDoi returns candidate → paper fields are populated', async () => {
     const candidate = {
-      abstract: 'An abstract', journal: 'J', venue: 'V', doi: '10.1/x',
-      url: 'https://u', volume: '1', issue: '2', pages: '1-10',
-      publisher: 'P', language: 'en', workType: 'journal-article'
+      abstract: 'An abstract',
+      journal: 'J',
+      venue: 'V',
+      doi: '10.1/x',
+      url: 'https://u',
+      volume: '1',
+      issue: '2',
+      pages: '1-10',
+      publisher: 'P',
+      language: 'en',
+      workType: 'journal-article',
     };
     const resolvers = makeResolvers({ openalexByDoi: { record: candidate } });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
-    const { pool: out, stats } = await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
+    const { pool: out, stats } = await enrichMetadataInPool(pool, {
+      resolvers,
+      logger: silentLogger(),
+    });
     const p = out.papers[0];
     assertEqual(p.abstract, 'An abstract');
     assertEqual(p.journal, 'J');
@@ -147,10 +191,16 @@ suite('metadata-enricher: scalar field enrichment', () => {
 
   test('"N/A" or whitespace-only values are NOT used to overwrite (existing field preserved)', async () => {
     // hasUsableText() filters out '', whitespace-only, and 'N/A' (case-insensitive).
-    const resolvers = makeResolvers({ openalexByDoi: { record: { journal: 'N/A', abstract: '   ' } } });
-    const pool = makePool([makePaper({
-      doi: '10.1/x', journal: 'GoodJournal', abstract: 'GoodAbstract'
-    })]);
+    const resolvers = makeResolvers({
+      openalexByDoi: { record: { journal: 'N/A', abstract: '   ' } },
+    });
+    const pool = makePool([
+      makePaper({
+        doi: '10.1/x',
+        journal: 'GoodJournal',
+        abstract: 'GoodAbstract',
+      }),
+    ]);
     const { pool: out } = await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
     assertEqual(out.papers[0].journal, 'GoodJournal');
     assertEqual(out.papers[0].abstract, 'GoodAbstract');
@@ -163,9 +213,15 @@ suite('metadata-enricher: scalar field enrichment', () => {
 
 suite('metadata-enricher: list field enrichment', () => {
   test('keywords are merged (union, dedup, preserves existing)', async () => {
-    const resolvers = makeResolvers({ openalexByDoi: { record: {
-      keywords: ['ML', 'NLP'], topics: ['AI'], fieldsOfStudy: ['CS', 'ML']
-    } } });
+    const resolvers = makeResolvers({
+      openalexByDoi: {
+        record: {
+          keywords: ['ML', 'NLP'],
+          topics: ['AI'],
+          fieldsOfStudy: ['CS', 'ML'],
+        },
+      },
+    });
     const pool = makePool([makePaper({ doi: '10.1/x', keywords: ['existing'] })]);
     const { pool: out } = await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
     const kw = out.papers[0].keywords;
@@ -175,13 +231,17 @@ suite('metadata-enricher: list field enrichment', () => {
     assertOk(kw.includes('AI'));
     assertOk(kw.includes('CS'));
     // ML appears in both keywords and fieldsOfStudy → deduped
-    assertEqual(kw.filter(k => k === 'ML').length, 1);
+    assertEqual(kw.filter((k) => k === 'ML').length, 1);
   });
 
   test('identifiers from candidate are merged into paper.identifiers', async () => {
-    const resolvers = makeResolvers({ openalexByDoi: { record: {
-      identifiers: { doi: '10.1/x', openalex: 'W999' }
-    } } });
+    const resolvers = makeResolvers({
+      openalexByDoi: {
+        record: {
+          identifiers: { doi: '10.1/x', openalex: 'W999' },
+        },
+      },
+    });
     const pool = makePool([makePaper({ doi: '10.1/x', identifiers: { arxiv: '2401.0' } })]);
     const { pool: out } = await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
     assertEqual(out.papers[0].identifiers.arxiv, '2401.0');
@@ -190,12 +250,24 @@ suite('metadata-enricher: list field enrichment', () => {
   });
 
   test('pdf_candidates are merged via mergePdfCandidates (no duplicates)', async () => {
-    const resolvers = makeResolvers({ openalexByDoi: { record: {
-      pdfCandidates: [
-        { url: 'https://arxiv.org/x.pdf', access_type: 'arxiv', source: 'oa', provider: 'oa',
-          confidence: 0.9, is_oa: true, license: null, reason: '' }
-      ]
-    } } });
+    const resolvers = makeResolvers({
+      openalexByDoi: {
+        record: {
+          pdfCandidates: [
+            {
+              url: 'https://arxiv.org/x.pdf',
+              access_type: 'arxiv',
+              source: 'oa',
+              provider: 'oa',
+              confidence: 0.9,
+              is_oa: true,
+              license: null,
+              reason: '',
+            },
+          ],
+        },
+      },
+    });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { pool: out } = await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
     const c = out.papers[0].pdf_candidates;
@@ -221,7 +293,9 @@ suite('metadata-enricher: overwrite vs onlyMissing', () => {
     const resolvers = makeResolvers({ openalexByDoi: { record: { journal: 'NewJournal' } } });
     const pool = makePool([makePaper({ doi: '10.1/x', journal: 'OldJournal' })]);
     const { pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), overwrite: true
+      resolvers,
+      logger: silentLogger(),
+      overwrite: true,
     });
     assertEqual(out.papers[0].journal, 'NewJournal');
   });
@@ -229,12 +303,17 @@ suite('metadata-enricher: overwrite vs onlyMissing', () => {
   test('onlyMissing=true: skips papers where every requested field is present', async () => {
     const calls = [];
     const resolvers = {
-      openalexByDoi: async () => { calls.push('oa'); return null; }
+      openalexByDoi: async () => {
+        calls.push('oa');
+        return null;
+      },
     };
     const pool = makePool([makePaper({ doi: '10.1/x', journal: 'J', venue: 'V' })]);
     const { stats } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), onlyMissing: true,
-      fields: ['journal', 'venue']
+      resolvers,
+      logger: silentLogger(),
+      onlyMissing: true,
+      fields: ['journal', 'venue'],
     });
     assertEqual(calls.length, 0, 'no resolver call because paper is complete');
     assertEqual(stats.attempted, 0);
@@ -245,8 +324,10 @@ suite('metadata-enricher: overwrite vs onlyMissing', () => {
     const resolvers = makeResolvers({ openalexByDoi: { record: { journal: 'J' } } });
     const pool = makePool([makePaper({ doi: '10.1/x', venue: 'V' })]); // journal missing
     const { stats } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), onlyMissing: true,
-      fields: ['journal', 'venue']
+      resolvers,
+      logger: silentLogger(),
+      onlyMissing: true,
+      fields: ['journal', 'venue'],
     });
     assertEqual(stats.attempted, 1);
   });
@@ -263,7 +344,7 @@ suite('metadata-enricher: field filtering', () => {
       openalexByDoi: async () => {
         calls.push('oa');
         return { abstract: 'A', journal: 'J', doi: '10.1/x' };
-      }
+      },
     };
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     await enrichMetadataInPool(pool, { resolvers, logger: silentLogger() });
@@ -274,7 +355,9 @@ suite('metadata-enricher: field filtering', () => {
     const resolvers = makeResolvers({ openalexByDoi: { record: { journal: 'J' } } });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), fields: []
+      resolvers,
+      logger: silentLogger(),
+      fields: [],
     });
     assertEqual(out.papers[0].journal, 'J');
   });
@@ -283,11 +366,17 @@ suite('metadata-enricher: field filtering', () => {
     const resolvers = makeResolvers({ openalexByDoi: { record: { journal: 'J' } } });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), fields: ['journal']
+      resolvers,
+      logger: silentLogger(),
+      fields: ['journal'],
     });
     const status = out.papers[0].metadata_status;
     assertOk(status.journal, 'journal is tracked');
-    assertEqual(status.abstract, undefined, 'abstract is NOT in metadata_status when not requested');
+    assertEqual(
+      status.abstract,
+      undefined,
+      'abstract is NOT in metadata_status when not requested'
+    );
   });
 });
 
@@ -308,17 +397,18 @@ suite('metadata-enricher: stats', () => {
         if (doi === '10.1/null') return null;
         if (doi === '10.1/throw') throw new Error('boom');
         return null;
-      }
+      },
     };
     const pool = makePool([
       makePaper({ doi: '10.1/good' }),
       makePaper({ doi: '10.1/null' }),
       makePaper({}),
-      makePaper({ doi: '10.1/throw' })
+      makePaper({ doi: '10.1/throw' }),
     ]);
     const { stats } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(),
-      fields: ['journal']
+      resolvers,
+      logger: silentLogger(),
+      fields: ['journal'],
     });
     assertEqual(stats.total, 4);
     assertEqual(stats.attempted, 4, 'every non-complete paper is attempted');
@@ -331,13 +421,21 @@ suite('metadata-enricher: stats', () => {
     // paper has no journal/venue/abstract → all 3 are new → 3 enriched fields
     // (doi is skipped because paper.doi already matches the candidate, so it
     //  is treated as a no-op by the merge logic.)
-    const resolvers = makeResolvers({ openalexByDoi: { record: {
-      journal: 'J', venue: 'V', doi: '10.1/x', abstract: 'A'
-    } } });
+    const resolvers = makeResolvers({
+      openalexByDoi: {
+        record: {
+          journal: 'J',
+          venue: 'V',
+          doi: '10.1/x',
+          abstract: 'A',
+        },
+      },
+    });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { stats } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(),
-      fields: ['journal', 'venue', 'abstract', 'doi']
+      resolvers,
+      logger: silentLogger(),
+      fields: ['journal', 'venue', 'abstract', 'doi'],
     });
     assertEqual(stats.enrichedFields, 3);
   });
@@ -348,14 +446,22 @@ suite('metadata-enricher: stats', () => {
     // always replace empty paper fields (the no-overwrite path would
     // still work for the empty fields, but the doi-on-doi case is
     // special-cased elsewhere).
-    const resolvers = makeResolvers({ openalexByDoi: { record: {
-      journal: 'J', venue: 'V', abstract: 'A', publisher: 'P'
-    } } });
+    const resolvers = makeResolvers({
+      openalexByDoi: {
+        record: {
+          journal: 'J',
+          venue: 'V',
+          abstract: 'A',
+          publisher: 'P',
+        },
+      },
+    });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { stats } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(),
+      resolvers,
+      logger: silentLogger(),
       fields: ['journal', 'venue', 'abstract', 'publisher'],
-      overwrite: true
+      overwrite: true,
     });
     assertEqual(stats.enrichedFields, 4);
   });
@@ -369,14 +475,16 @@ suite('metadata-enricher: checkpoint callback', () => {
   test('checkpointInterval=N fires onCheckpoint every N processed papers', async () => {
     let checkpointCount = 0;
     const resolvers = {
-      openalexByDoi: async () => null
+      openalexByDoi: async () => null,
     };
-    const pool = makePool(Array.from({ length: 5 }, (_, i) =>
-      makePaper({ doi: `10.1/${i}` })));
+    const pool = makePool(Array.from({ length: 5 }, (_, i) => makePaper({ doi: `10.1/${i}` })));
     await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(),
+      resolvers,
+      logger: silentLogger(),
       checkpointInterval: 2,
-      onCheckpoint: () => { checkpointCount++; }
+      onCheckpoint: () => {
+        checkpointCount++;
+      },
     });
     // 5 papers / 2 = 2 full checkpoints (papers 1-2 and 3-4), paper 5 doesn't trigger
     assertOk(checkpointCount >= 2, `expected at least 2 checkpoints, got ${checkpointCount}`);
@@ -387,9 +495,12 @@ suite('metadata-enricher: checkpoint callback', () => {
     const resolvers = { openalexByDoi: async () => null };
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(),
+      resolvers,
+      logger: silentLogger(),
       checkpointInterval: 0,
-      onCheckpoint: () => { checkpointCount++; }
+      onCheckpoint: () => {
+        checkpointCount++;
+      },
     });
     assertEqual(checkpointCount, 0);
   });
@@ -403,15 +514,16 @@ suite('metadata-enricher: concurrency', () => {
       openalexByDoi: async (doi) => {
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise((r) => setTimeout(r, 10));
         inFlight--;
         return { journal: `J-${doi}` };
-      }
+      },
     };
-    const pool = makePool(Array.from({ length: 6 }, (_, i) =>
-      makePaper({ doi: `10.1/${i}` })));
+    const pool = makePool(Array.from({ length: 6 }, (_, i) => makePaper({ doi: `10.1/${i}` })));
     const { pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), concurrency: 3
+      resolvers,
+      logger: silentLogger(),
+      concurrency: 3,
     });
     assertOk(maxInFlight > 1, `expected concurrent execution, max in-flight was ${maxInFlight}`);
     for (let i = 0; i < 6; i++) {
@@ -423,7 +535,9 @@ suite('metadata-enricher: concurrency', () => {
     const resolvers = makeResolvers({ openalexByDoi: { record: { journal: 'J' } } });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { stats } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), concurrency: 1
+      resolvers,
+      logger: silentLogger(),
+      concurrency: 1,
     });
     assertEqual(stats.enrichedPapers, 1);
   });
@@ -436,12 +550,15 @@ suite('metadata-enricher: concurrency', () => {
 suite('metadata-enricher: resolver failures are isolated', () => {
   test('one resolver throwing does not stop the rest', async () => {
     const resolvers = {
-      arxivById: async () => { throw new Error('arxiv down'); },
-      openalexByDoi: async () => ({ journal: 'J' })
+      arxivById: async () => {
+        throw new Error('arxiv down');
+      },
+      openalexByDoi: async () => ({ journal: 'J' }),
     };
     const pool = makePool([makePaper({ arxiv_id: '2401.0', doi: '10.1/x' })]);
     const { stats, pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger()
+      resolvers,
+      logger: silentLogger(),
     });
     assertEqual(out.papers[0].journal, 'J', 'openalex should still enrich');
     assertOk(stats.attempted >= 1);
@@ -457,7 +574,10 @@ suite('metadata-enricher: pool metadata', () => {
     const resolvers = makeResolvers({ openalexByDoi: { record: null } });
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     const { pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger(), overwrite: true, concurrency: 2
+      resolvers,
+      logger: silentLogger(),
+      overwrite: true,
+      concurrency: 2,
     });
     const me = out.metadata.metadataEnrichment;
     assertOk(me);
@@ -473,7 +593,8 @@ suite('metadata-enricher: pool metadata', () => {
     const pool = makePool([makePaper({ doi: '10.1/x' })]);
     pool.metadata.keptFromBefore = 'value';
     const { pool: out } = await enrichMetadataInPool(pool, {
-      resolvers, logger: silentLogger()
+      resolvers,
+      logger: silentLogger(),
     });
     assertEqual(out.metadata.keptFromBefore, 'value');
     assertOk(out.metadata.metadataEnrichment);

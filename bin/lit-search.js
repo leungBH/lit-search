@@ -14,13 +14,24 @@ import {
   getResolvedApiKeys,
   getStoredApiKeys,
   saveApiKeys,
-  summarizeApiKeySources
+  summarizeApiKeySources,
 } from '../lib/app-config.js';
+import {
+  parseArgs,
+  expandInputPattern,
+  getOptionValue,
+  getNumberOptionValue,
+  resolveInitValue,
+  buildRuntimeEngines,
+} from './lit-search-utils.js';
 
 if (process.platform === 'win32') {
   try {
     execSync('chcp 65001', { stdio: 'ignore' });
-  } catch {}
+  } catch {
+    // Best-effort console mode switch; failure is non-fatal (e.g. chcp
+    // is not on PATH, or the shell is non-interactive).
+  }
   process.stdout.setDefaultEncoding('utf8');
   process.stderr.setDefaultEncoding('utf8');
 }
@@ -30,74 +41,6 @@ const __dirname = dirname(__filename);
 const packageRoot = join(__dirname, '..');
 const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'));
 const config = createAppConfig();
-
-function parseArgs(args) {
-  const options = {
-    query: null,
-    limit: 3,
-    yearStart: null,
-    yearEnd: null,
-    queryExpansion: 'none',
-    searchScope: 'default-engine-search',
-    outputBaseDir: process.cwd(),
-    resolvePreprint: false,
-    preferPublished: false,
-    withPubMed: false,
-    withOpenCitations: false
-  };
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-
-    if (arg === '--limit' || arg === '-l') {
-      options.limit = parseInt(args[++i], 10) || 3;
-    } else if (arg === '--since' || arg === '-s' || arg === '--year-start') {
-      options.yearStart = parseInt(args[++i], 10) || null;
-    } else if (arg === '--until' || arg === '-u' || arg === '--year-end') {
-      options.yearEnd = parseInt(args[++i], 10) || null;
-    } else if (arg === '--expand') {
-      options.queryExpansion = normalizeQueryExpansion(args[++i]);
-    } else if (arg === '--search-scope') {
-      options.searchScope = normalizeSearchScope(args[++i]);
-    } else if (arg === '--output-dir') {
-      options.outputBaseDir = resolve(args[++i] || process.cwd());
-    } else if (arg === '--resolve-preprint') {
-      options.resolvePreprint = true;
-    } else if (arg === '--prefer-published') {
-      options.preferPublished = true;
-      options.resolvePreprint = true;
-    } else if (arg === '--with-pubmed') {
-      options.withPubMed = true;
-    } else if (arg === '--with-opencitations') {
-      options.withOpenCitations = true;
-    } else if (arg === '--pdf' || arg === '--no-pdf' || arg === '--retry') {
-      console.error(chalk.red('PDF download options have been removed. lit-search now writes only search_meta.json, literature_pool.json, and references.bib.'));
-      process.exit(1);
-    } else if (arg === '--format') {
-      console.error(chalk.red('The --format option has been removed. lit-search now writes search_meta.json, literature_pool.json, and references.bib.'));
-      process.exit(1);
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else if (arg === '--version' || arg === '-v') {
-      console.log(packageJson.version);
-      process.exit(0);
-    } else if (arg.startsWith('-') && arg.length > 1) {
-      // Looks like a flag we do not recognize. Reject it loudly so the
-      // user does not silently get an empty/garbled query.
-      console.error(chalk.red(`Unknown option: ${arg}`));
-      console.log('Run `lit-search --help` for the list of supported options.');
-      process.exit(1);
-    } else {
-      // Bare positional: collect it. If the user passes several unquoted
-      // words (e.g. `lit-search machine learning -l 5`) we join them
-      // with spaces so the query string is still meaningful.
-      options.query = options.query ? `${options.query} ${arg}` : arg;
-    }
-  }
-
-  return options;
-}
 
 function printHelp() {
   console.log(`
@@ -173,28 +116,6 @@ Free optional keys configured by lit-search init:
 `);
 }
 
-function normalizeQueryExpansion(value) {
-  const normalized = (value || '').toLowerCase().trim();
-  const allowed = new Set(['none', 'pairwise', 'full']);
-  if (!allowed.has(normalized)) {
-    console.error(chalk.red(`Unsupported query expansion: ${value}`));
-    console.log('Allowed values: none, pairwise, full\n');
-    process.exit(1);
-  }
-  return normalized;
-}
-
-function normalizeSearchScope(value) {
-  const normalized = (value || '').toLowerCase().trim();
-  const allowed = new Set(['title-only', 'title-abstract', 'default-engine-search']);
-  if (!allowed.has(normalized)) {
-    console.error(chalk.red(`Unsupported search scope: ${value}`));
-    console.log('Allowed values: title-only, title-abstract, default-engine-search\n');
-    process.exit(1);
-  }
-  return normalized;
-}
-
 async function main() {
   const args = process.argv.slice(2);
 
@@ -225,7 +146,29 @@ async function main() {
   // Anything that is not one of the four known subcommands above is
   // either a flag (handled by parseArgs) or a bare/explicit `search`
   // query. Fall through to the search flow.
-  const options = parseArgs(command === 'search' ? args.slice(1) : args);
+  const options = parseArgs(command === 'search' ? args.slice(1) : args, {
+    cwd: process.cwd(),
+    resolvePath: (p) => resolve(p || process.cwd()),
+  });
+
+  // parseArgs surfaces help/version/unknown-option/removed-option
+  // outcomes as sentinel keys so the pure function can stay testable.
+  if (options._help) {
+    printHelp();
+    return;
+  }
+  if (options._version) {
+    console.log(packageJson.version);
+    return;
+  }
+  if (options._error) {
+    console.error(chalk.red(options._error));
+    if (options._error.startsWith('Unknown option')) {
+      console.log('Run `lit-search --help` for the list of supported options.');
+    }
+    process.exit(1);
+  }
+
   if (!options.query) {
     console.error(chalk.red('Please provide a search query.'));
     console.log('Example: lit-search "machine learning" -l 5 -s 2022');
@@ -241,7 +184,9 @@ async function main() {
   console.log(`Expansion: ${options.queryExpansion}`);
   console.log(`Search scope: ${options.searchScope}`);
   if (options.resolvePreprint || options.preferPublished) {
-    console.log(`Publication resolution: ${options.resolvePreprint ? 'resolve preprint' : 'off'}${options.preferPublished ? ', prefer published' : ''}`);
+    console.log(
+      `Publication resolution: ${options.resolvePreprint ? 'resolve preprint' : 'off'}${options.preferPublished ? ', prefer published' : ''}`
+    );
   }
   console.log(`Output folder: ${plannedOutputDir}`);
   if (options.yearStart || options.yearEnd) {
@@ -261,9 +206,9 @@ async function main() {
       searchScope: options.searchScope,
       resolvePreprint: options.resolvePreprint,
       preferPublished: options.preferPublished,
-      engines: buildRuntimeEngines(options),
+      engines: buildRuntimeEngines(config.get('engines') || {}, options),
       apiKeys: getResolvedApiKeys(config),
-      outputBaseDir: options.outputBaseDir
+      outputBaseDir: options.outputBaseDir,
     });
 
     const { result, output } = workflow;
@@ -302,14 +247,25 @@ async function main() {
 }
 
 async function runMergeCommand(args) {
-  const outputIndex = args.findIndex(arg => arg === '-o' || arg === '--output-dir');
-  const outputDir = outputIndex >= 0 ? resolve(args[outputIndex + 1]) : resolve('merged_literature');
-  const resolvePreprint = args.includes('--resolve-preprint') || args.includes('--prefer-published');
+  const outputIndex = args.findIndex((arg) => arg === '-o' || arg === '--output-dir');
+  const outputDir =
+    outputIndex >= 0 ? resolve(args[outputIndex + 1]) : resolve('merged_literature');
+  const resolvePreprint =
+    args.includes('--resolve-preprint') || args.includes('--prefer-published');
   const preferPublished = args.includes('--prefer-published');
   const withOpenCitations = args.includes('--with-opencitations');
-  const optionNames = new Set(['--enrich', '--resolve-preprint', '--prefer-published', '--with-opencitations']);
-  const rawInputs = (outputIndex >= 0 ? args.slice(0, outputIndex) : args).filter(arg => !optionNames.has(arg));
-  const inputs = rawInputs.flatMap(expandInputPattern);
+  const optionNames = new Set([
+    '--enrich',
+    '--resolve-preprint',
+    '--prefer-published',
+    '--with-opencitations',
+  ]);
+  const rawInputs = (outputIndex >= 0 ? args.slice(0, outputIndex) : args).filter(
+    (arg) => !optionNames.has(arg)
+  );
+  const inputs = rawInputs.flatMap((p) =>
+    expandInputPattern(p, { readdir: readdirSync, exists: existsSync, sep: '/' })
+  );
   if (!inputs.length) {
     throw new Error('Please provide at least one pool folder or literature_pool.json path.');
   }
@@ -318,16 +274,20 @@ async function runMergeCommand(args) {
     preferPublished,
     apiKeys: getResolvedApiKeys(config),
     logger: console,
-    engines: buildRuntimeEngines({ withOpenCitations })
+    engines: buildRuntimeEngines(config.get('engines') || {}, { withOpenCitations }),
   });
   if (args.includes('--enrich')) {
     const enriched = await enrichMetadata(outputDir, {
       apiKeys: getResolvedApiKeys(config),
-      logger: console
+      logger: console,
     });
     result.pool = enriched.pool;
     result.files = enriched.files;
-    console.log(chalk.green(`Metadata enrichment: ${enriched.stats.enrichedPapers} papers, ${enriched.stats.enrichedFields} fields enriched, ${enriched.stats.lookupFailed} failed`));
+    console.log(
+      chalk.green(
+        `Metadata enrichment: ${enriched.stats.enrichedPapers} papers, ${enriched.stats.enrichedFields} fields enriched, ${enriched.stats.lookupFailed} failed`
+      )
+    );
   }
   console.log(chalk.green(`Merged ${inputs.length} pool(s) into ${outputDir}`));
   console.log(`Papers: ${result.pool.papers.length}`);
@@ -353,13 +313,17 @@ async function runEnrichCommand(args) {
     checkpointInterval,
     concurrency,
     apiKeys: getResolvedApiKeys(config),
-    logger: console
+    logger: console,
   });
   console.log(chalk.green(`Metadata enrichment complete: ${result.outputDir}`));
-  console.log(`Mode:             ${result.pool.metadata.metadataEnrichment.onlyMissing ? 'only missing' : 'missing unless --overwrite'}`);
+  console.log(
+    `Mode:             ${result.pool.metadata.metadataEnrichment.onlyMissing ? 'only missing' : 'missing unless --overwrite'}`
+  );
   console.log(`Fields:           ${result.pool.metadata.metadataEnrichment.fields.join(', ')}`);
   console.log(`Concurrency:      ${result.pool.metadata.metadataEnrichment.concurrency}`);
-  console.log(`Checkpoint every: ${result.pool.metadata.metadataEnrichment.checkpointInterval || 'disabled'}`);
+  console.log(
+    `Checkpoint every: ${result.pool.metadata.metadataEnrichment.checkpointInterval || 'disabled'}`
+  );
   console.log(`Complete:         ${result.stats.complete}`);
   console.log(`Attempted:        ${result.stats.attempted}`);
   console.log(`Enriched papers:  ${result.stats.enrichedPapers}`);
@@ -375,55 +339,26 @@ async function runResolveCommand(args) {
   if (!file) {
     throw new Error('Please provide a citations text file.');
   }
-  const options = parseArgs(args.slice(1));
-  const outputDir = options.outputBaseDir === process.cwd()
-    ? join(process.cwd(), generateOutputFolderName())
-    : options.outputBaseDir;
+  const options = parseArgs(args.slice(1), {
+    cwd: process.cwd(),
+    resolvePath: (p) => resolve(p || process.cwd()),
+  });
+  const outputDir =
+    options.outputBaseDir === process.cwd()
+      ? join(process.cwd(), generateOutputFolderName())
+      : options.outputBaseDir;
   const result = await resolveCitationsFile(file, {
     limit: options.limit,
     outputDir,
     apiKeys: getResolvedApiKeys(config),
-    engines: buildRuntimeEngines(options),
+    engines: buildRuntimeEngines(config.get('engines') || {}, options),
     logger: console,
     resolvePreprint: options.resolvePreprint,
-    preferPublished: options.preferPublished
+    preferPublished: options.preferPublished,
   });
   console.log(chalk.green(`Resolved citations into ${outputDir}`));
   console.log(`Resolved: ${result.pool.papers.length}`);
   console.log(`Unresolved: ${result.unresolved.length}`);
-}
-
-function expandInputPattern(pattern) {
-  if (!pattern.includes('*')) return [pattern];
-  const absolute = resolve(pattern);
-  const dir = dirname(absolute);
-  const regex = new RegExp(`^${absolute.split(/[\\/]/).pop().replace(/\*/g, '.*')}$`);
-  return readdirSync(dir)
-    .filter(name => regex.test(name))
-    .map(name => join(dir, name))
-    .filter(path => existsSync(path));
-}
-
-function buildRuntimeEngines(options = {}) {
-  return {
-    ...(config.get('engines') || {}),
-    ...(options.withPubMed ? { pubmed: true } : {}),
-    ...(options.withOpenCitations ? { openCitations: true } : {})
-  };
-}
-
-function getOptionValue(args, name) {
-  const index = args.indexOf(name);
-  if (index < 0) return null;
-  const value = args[index + 1];
-  return value && !value.startsWith('-') ? value : null;
-}
-
-function getNumberOptionValue(args, name, fallback) {
-  const value = getOptionValue(args, name);
-  if (value === null) return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 async function runInit() {
@@ -437,36 +372,36 @@ async function runInit() {
       type: 'password',
       name: 's2',
       mask: '*',
-      message: `Semantic Scholar API Key${storedApiKeys.s2 ? ' (configured)' : ''}:`
+      message: `Semantic Scholar API Key${storedApiKeys.s2 ? ' (configured)' : ''}:`,
     },
     {
       type: 'password',
       name: 'openalex',
       mask: '*',
-      message: `OpenAlex API Key${storedApiKeys.openalex ? ' (configured)' : ''}:`
+      message: `OpenAlex API Key${storedApiKeys.openalex ? ' (configured)' : ''}:`,
     },
     {
       type: 'input',
       name: 'crossrefMailto',
-      message: `CrossRef contact email${storedApiKeys.crossrefMailto ? ` (current: ${storedApiKeys.crossrefMailto})` : ''}:`
+      message: `CrossRef contact email${storedApiKeys.crossrefMailto ? ` (current: ${storedApiKeys.crossrefMailto})` : ''}:`,
     },
     {
       type: 'password',
       name: 'core',
       mask: '*',
-      message: `CORE API Key${storedApiKeys.core ? ' (configured)' : ''}:`
+      message: `CORE API Key${storedApiKeys.core ? ' (configured)' : ''}:`,
     },
     {
       type: 'password',
       name: 'ncbi',
       mask: '*',
-      message: `NCBI API Key for PubMed (optional)${storedApiKeys.ncbi ? ' (configured)' : ''}:`
+      message: `NCBI API Key for PubMed (optional)${storedApiKeys.ncbi ? ' (configured)' : ''}:`,
     },
     {
       type: 'input',
       name: 'unpaywallEmail',
-      message: `Unpaywall email for OA metadata${storedApiKeys.unpaywallEmail ? ` (current: ${storedApiKeys.unpaywallEmail})` : ''}:`
-    }
+      message: `Unpaywall email for OA metadata${storedApiKeys.unpaywallEmail ? ` (current: ${storedApiKeys.unpaywallEmail})` : ''}:`,
+    },
   ]);
 
   saveApiKeys(config, {
@@ -475,27 +410,29 @@ async function runInit() {
     crossrefMailto: resolveInitValue(answers.crossrefMailto, storedApiKeys.crossrefMailto),
     core: resolveInitValue(answers.core, storedApiKeys.core),
     ncbi: resolveInitValue(answers.ncbi, storedApiKeys.ncbi),
-    unpaywallEmail: resolveInitValue(answers.unpaywallEmail, storedApiKeys.unpaywallEmail)
+    unpaywallEmail: resolveInitValue(answers.unpaywallEmail, storedApiKeys.unpaywallEmail),
   });
 
   const summary = summarizeApiKeySources(config);
   console.log(chalk.green('\nAPI key configuration saved.'));
   console.log(chalk.gray(`Config file: ${summary.storedPath}`));
-  console.log(chalk.gray(`Semantic Scholar: ${summary.values.semanticScholar ? 'configured' : 'missing'}`));
-  console.log(chalk.gray(`OpenAlex:         ${summary.values.openalex ? 'configured' : 'missing'}`));
-  console.log(chalk.gray(`CrossRef mailto:  ${summary.values.crossrefMailto ? 'configured' : 'missing'}`));
+  console.log(
+    chalk.gray(`Semantic Scholar: ${summary.values.semanticScholar ? 'configured' : 'missing'}`)
+  );
+  console.log(
+    chalk.gray(`OpenAlex:         ${summary.values.openalex ? 'configured' : 'missing'}`)
+  );
+  console.log(
+    chalk.gray(`CrossRef mailto:  ${summary.values.crossrefMailto ? 'configured' : 'missing'}`)
+  );
   console.log(chalk.gray(`CORE:             ${summary.values.core ? 'configured' : 'missing'}`));
   console.log(chalk.gray(`NCBI/PubMed:      ${summary.values.ncbi ? 'configured' : 'missing'}`));
-  console.log(chalk.gray(`Unpaywall email:  ${summary.values.unpaywallEmail ? 'configured' : 'missing'}`));
+  console.log(
+    chalk.gray(`Unpaywall email:  ${summary.values.unpaywallEmail ? 'configured' : 'missing'}`)
+  );
 }
 
-function resolveInitValue(input, currentValue) {
-  if (input === '-') return null;
-  if (input === '' || input === undefined) return currentValue || null;
-  return String(input).trim() || currentValue || null;
-}
-
-main().catch(error => {
+main().catch((error) => {
   console.error(chalk.red(error.message));
   process.exit(1);
 });

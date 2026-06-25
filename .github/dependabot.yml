@@ -8,6 +8,13 @@ updates:
       time: '09:00'
       timezone: 'Asia/Shanghai'
     open-pull-requests-limit: 5
+    # Rebase active Dependabot PRs on top of main instead of merging main
+    # into them. Keeps patch-only PRs a single clean commit, which makes
+    # review and bisect much easier.
+    rebase-strategy: 'auto'
+    # Bump the package.json range to the new version rather than recreating
+    # the lockfile from scratch. Avoids churn in unrelated transitive deps.
+    versioning-strategy: 'increase'
     # Use a simple 'chore' prefix. Without this, dependabot appends
     # the group name as a scope and we end up with double (deps).
     commit-message:
@@ -15,6 +22,10 @@ updates:
     labels:
       - 'dependencies'
       - 'npm'
+      # Surface auto-mergeable (patch-only) PRs in the PR list so the
+      # team can see "this will land on its own" at a glance. The
+      # actual auto-merge happens in dependabot-auto-merge.yml.
+      - 'auto-merge:patch'
     # NOTE: We do NOT use `groups` here. Dependabot's `groups` block
     # re-enables dependencies that are listed in `ignore`, which
     # broke our `conf` / `inquirer` blocklist and produced an unsafe

@@ -1,6 +1,6 @@
 {
   "name": "lit-search",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Academic literature search CLI and MCP server for Semantic Scholar, OpenAlex, arXiv, CrossRef, CORE, Europe PMC, DBLP, and DOAJ. Outputs reproducible metadata JSON, literature pool JSON, and BibTeX. MCP tools: search_literature, get_paper, resolve_citations, enrich_metadata, merge_pools.",
   "keywords": [
     "literature",
@@ -38,7 +38,14 @@
   "scripts": {
     "test": "node tests/run.js",
     "test:integration": "node test.js",
-    "diagnose": "node diagnose.js"
+    "diagnose": "node diagnose.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "coverage": "c8 --reporter=text --reporter=html --reporter=json-summary npm test",
+    "coverage:check": "c8 --reporter=text --check-coverage --lines=50 --branches=70 --functions=50 --statements=50 npm test",
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",
@@ -59,5 +66,37 @@
     "darwin",
     "linux",
     "win32"
-  ]
+  ],
+  "devDependencies": {
+    "c8": "^11.0.0",
+    "eslint": "^9.39.4",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "nock": "^14.0.15",
+    "prettier": "^3.8.4"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "c8": {
+    "include": [
+      "lib/**/*.js",
+      "bin/**/*.js"
+    ],
+    "exclude": [
+      "tests/**",
+      "**/*.test.js",
+      "**/coverage/**"
+    ],
+    "reports-dir": "coverage",
+    "clean": true,
+    "skip-full": false
+  }
 }

@@ -17,12 +17,12 @@ const C = {
   green: COLOR ? '\x1b[32m' : '',
   yellow: COLOR ? '\x1b[33m' : '',
   cyan: COLOR ? '\x1b[36m' : '',
-  gray: COLOR ? '\x1b[90m' : ''
+  gray: COLOR ? '\x1b[90m' : '',
 };
 
 const suites = [];
 let currentSuite = null;
-let currentBeforeEach = null;
+const currentBeforeEach = null;
 
 export function suite(name, fn) {
   if (currentSuite) {
@@ -87,10 +87,10 @@ export async function runSuites({ filter = '', skipNetwork = false } = {}) {
   console.log(`\n${C.bold}${'-'.repeat(64)}${C.reset}`);
   console.log(
     `${C.bold}Passed:${C.reset} ${C.green}${summary.passed}${C.reset}  ` +
-    `${C.bold}Failed:${C.reset} ${summary.failed ? C.red : C.dim}${summary.failed}${C.reset}  ` +
-    `${C.bold}Skipped:${C.reset} ${C.yellow}${summary.skipped}${C.reset}  ` +
-    `${C.bold}Total:${C.reset} ${summary.total}  ` +
-    `${C.dim}(${elapsed}s)${C.reset}`
+      `${C.bold}Failed:${C.reset} ${summary.failed ? C.red : C.dim}${summary.failed}${C.reset}  ` +
+      `${C.bold}Skipped:${C.reset} ${C.yellow}${summary.skipped}${C.reset}  ` +
+      `${C.bold}Total:${C.reset} ${summary.total}  ` +
+      `${C.dim}(${elapsed}s)${C.reset}`
   );
   console.log(`${C.bold}${'-'.repeat(64)}${C.reset}`);
 
@@ -103,13 +103,17 @@ export async function runSuites({ filter = '', skipNetwork = false } = {}) {
     lines.push(`Node: ${process.version}  Platform: ${process.platform}`);
     lines.push(`Filter: ${filter || '(none)'}  SkipNetwork: ${skipNetwork}`);
     lines.push('');
-    lines.push(`Summary: passed=${summary.passed} failed=${summary.failed} skipped=${summary.skipped} total=${summary.total} elapsed=${elapsed}s`);
+    lines.push(
+      `Summary: passed=${summary.passed} failed=${summary.failed} skipped=${summary.skipped} total=${summary.total} elapsed=${elapsed}s`
+    );
     lines.push('');
     if (summary.errors.length) {
       lines.push('Failures:');
       for (const e of summary.errors) {
         lines.push(`  - [${e.suite}] ${e.test}`);
-        lines.push(`    ${String(e.error?.stack || e.error?.message || e.error).replace(/\n/g, '\n    ')}`);
+        lines.push(
+          `    ${String(e.error?.stack || e.error?.message || e.error).replace(/\n/g, '\n    ')}`
+        );
       }
       lines.push('');
     }
@@ -121,13 +125,19 @@ export async function runSuites({ filter = '', skipNetwork = false } = {}) {
 
 export function assertEqual(actual, expected, message) {
   if (!deepEqual(actual, expected)) {
-    throw new Error(message || `assertEqual failed\n  expected: ${format(expected)}\n  actual:   ${format(actual)}`);
+    throw new Error(
+      message ||
+        `assertEqual failed\n  expected: ${format(expected)}\n  actual:   ${format(actual)}`
+    );
   }
 }
 
 export function assertDeepEqual(actual, expected, message) {
   if (!deepEqual(actual, expected)) {
-    throw new Error(message || `assertDeepEqual failed\n  expected: ${format(expected)}\n  actual:   ${format(actual)}`);
+    throw new Error(
+      message ||
+        `assertDeepEqual failed\n  expected: ${format(expected)}\n  actual:   ${format(actual)}`
+    );
   }
 }
 
@@ -161,10 +171,16 @@ export function assertOk(condition, message) {
 
 export function assertThrows(fn, matcher, message) {
   let thrown;
-  try { fn(); } catch (e) { thrown = e; }
+  try {
+    fn();
+  } catch (e) {
+    thrown = e;
+  }
   if (!thrown) throw new Error(message || 'assertThrows: no error was thrown');
   if (matcher instanceof RegExp && !matcher.test(thrown.message)) {
-    throw new Error(message || `assertThrows: message "${thrown.message}" did not match ${matcher}`);
+    throw new Error(
+      message || `assertThrows: message "${thrown.message}" did not match ${matcher}`
+    );
   }
 }
 
@@ -172,8 +188,10 @@ export function assertRejects(asyncFn, matcher, message) {
   return Promise.resolve()
     .then(() => asyncFn())
     .then(
-      () => { throw new Error(message || 'assertRejects: did not reject'); },
-      err => {
+      () => {
+        throw new Error(message || 'assertRejects: did not reject');
+      },
+      (err) => {
         if (matcher instanceof RegExp && !matcher.test(err.message)) {
           throw new Error(message || `assertRejects: "${err.message}" did not match ${matcher}`);
         }
@@ -183,13 +201,17 @@ export function assertRejects(asyncFn, matcher, message) {
 
 function format(value) {
   if (typeof value === 'string') return JSON.stringify(value);
-  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function formatError(error) {
   return (error.stack || error.message || String(error))
     .split('\n')
-    .map((line, i) => i === 0 ? line : '    ' + line)
+    .map((line, i) => (i === 0 ? line : '    ' + line))
     .join('\n');
 }
 
@@ -211,5 +233,6 @@ function deepEqual(a, b) {
 }
 
 export const color = C;
-export const cliEntry = process.env.LIT_SEARCH_CLI ||
+export const cliEntry =
+  process.env.LIT_SEARCH_CLI ||
   join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'lit-search.js');

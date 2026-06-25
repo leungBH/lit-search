@@ -33,8 +33,11 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
     const enhancers = {
       unpaywall: {
         email: 'me@x.com',
-        fetchByDoi: async (doi) => { calls.push(doi); return null; }
-      }
+        fetchByDoi: async (doi) => {
+          calls.push(doi);
+          return null;
+        },
+      },
     };
     const stats = await enhanceOutputPapers([makePaper({ title: 'A' })], enhancers);
     assertEqual(calls.length, 0);
@@ -46,8 +49,11 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
     const enhancers = {
       unpaywall: {
         email: 'me@x.com',
-        fetchByDoi: async (doi) => { calls.push(doi); return null; }
-      }
+        fetchByDoi: async (doi) => {
+          calls.push(doi);
+          return null;
+        },
+      },
     };
     const stats = await enhanceOutputPapers([makePaper({ doi: '10.1/x' })], enhancers);
     assertDeepEqual(calls, ['10.1/x']);
@@ -60,8 +66,11 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
     const enhancers = {
       unpaywall: {
         email: 'me@x.com',
-        fetchByDoi: async (doi) => { calls.push(doi); return null; }
-      }
+        fetchByDoi: async (doi) => {
+          calls.push(doi);
+          return null;
+        },
+      },
     };
     await enhanceOutputPapers([makePaper({ identifiers: { doi: '10.2/y' } })], enhancers);
     assertDeepEqual(calls, ['10.2/y']);
@@ -73,12 +82,20 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
       license: 'CC-BY',
       oa_status: 'gold',
       pdfCandidates: [
-        { url: 'https://x/y.pdf', access_type: 'publisher_oa_pdf', source: 'upw', provider: 'upw',
-          confidence: 0.9, is_oa: true, license: 'CC-BY', reason: '' }
-      ]
+        {
+          url: 'https://x/y.pdf',
+          access_type: 'publisher_oa_pdf',
+          source: 'upw',
+          provider: 'upw',
+          confidence: 0.9,
+          is_oa: true,
+          license: 'CC-BY',
+          reason: '',
+        },
+      ],
     };
     const enhancers = {
-      unpaywall: { email: 'me@x.com', fetchByDoi: async () => candidate }
+      unpaywall: { email: 'me@x.com', fetchByDoi: async () => candidate },
     };
     const papers = [makePaper({ doi: '10.1/x' })];
     const stats = await enhanceOutputPapers(papers, enhancers);
@@ -92,7 +109,7 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
 
   test('metadata_sources.open_access is recorded with confidence 0.85', async () => {
     const enhancers = {
-      unpaywall: { email: 'me@x.com', fetchByDoi: async () => ({ is_oa: true }) }
+      unpaywall: { email: 'me@x.com', fetchByDoi: async () => ({ is_oa: true }) },
     };
     const papers = [makePaper({ doi: '10.1/x' })];
     await enhanceOutputPapers(papers, enhancers);
@@ -103,9 +120,11 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
 
   test('existing oa_status is preserved when candidate returns null', async () => {
     const enhancers = {
-      unpaywall: { email: 'me@x.com', fetchByDoi: async () => null }
+      unpaywall: { email: 'me@x.com', fetchByDoi: async () => null },
     };
-    const papers = [makePaper({ doi: '10.1/x', oa_status: 'closed', is_oa: false, license: 'Proprietary' })];
+    const papers = [
+      makePaper({ doi: '10.1/x', oa_status: 'closed', is_oa: false, license: 'Proprietary' }),
+    ];
     await enhanceOutputPapers(papers, enhancers);
     assertEqual(papers[0].oa_status, 'closed');
     assertEqual(papers[0].is_oa, false);
@@ -114,7 +133,7 @@ suite('search: enhanceOutputPapers (unpaywall)', () => {
 
   test('without unpaywall.email: stats.enabled=false, no fetch attempted', async () => {
     const stats = await enhanceOutputPapers([makePaper({ doi: '10.1/x' })], {
-      unpaywall: { email: null, fetchByDoi: async () => null }
+      unpaywall: { email: null, fetchByDoi: async () => null },
     });
     assertEqual(stats.unpaywall.enabled, false);
     assertEqual(stats.unpaywall.attempted, 0);
@@ -125,7 +144,12 @@ suite('search: enhanceOutputPapers (openCitations)', () => {
   test('paper with no DOI is skipped', async () => {
     const calls = [];
     const enhancers = {
-      openCitations: { fetchCitationRelations: async (doi) => { calls.push(doi); return null; } }
+      openCitations: {
+        fetchCitationRelations: async (doi) => {
+          calls.push(doi);
+          return null;
+        },
+      },
     };
     const stats = await enhanceOutputPapers([makePaper()], enhancers);
     assertEqual(calls.length, 0);
@@ -135,7 +159,7 @@ suite('search: enhanceOutputPapers (openCitations)', () => {
   test('relations with non-empty refs OR citations → paper enriched', async () => {
     const relations = { references: ['10.1/ref'], citations: [] };
     const enhancers = {
-      openCitations: { fetchCitationRelations: async () => relations }
+      openCitations: { fetchCitationRelations: async () => relations },
     };
     const papers = [makePaper({ doi: '10.1/x' })];
     const stats = await enhanceOutputPapers(papers, enhancers);
@@ -147,7 +171,7 @@ suite('search: enhanceOutputPapers (openCitations)', () => {
 
   test('empty relations (no refs, no citations) → NOT enriched', async () => {
     const enhancers = {
-      openCitations: { fetchCitationRelations: async () => ({ references: [], citations: [] }) }
+      openCitations: { fetchCitationRelations: async () => ({ references: [], citations: [] }) },
     };
     const papers = [makePaper({ doi: '10.1/x' })];
     const stats = await enhanceOutputPapers(papers, enhancers);
@@ -157,7 +181,7 @@ suite('search: enhanceOutputPapers (openCitations)', () => {
 
   test('null relations result → not enriched, no error', async () => {
     const enhancers = {
-      openCitations: { fetchCitationRelations: async () => null }
+      openCitations: { fetchCitationRelations: async () => null },
     };
     const papers = [makePaper({ doi: '10.1/x' })];
     const stats = await enhanceOutputPapers(papers, enhancers);
@@ -173,14 +197,17 @@ suite('search: enhanceOutputPapers (both enhancers together)', () => {
     const enhancers = {
       unpaywall: {
         email: 'me@x.com',
-        fetchByDoi: async () => { unpaywallCalled++; return { is_oa: true }; }
+        fetchByDoi: async () => {
+          unpaywallCalled++;
+          return { is_oa: true };
+        },
       },
       openCitations: {
         fetchCitationRelations: async () => {
           opencitationsCalled++;
           return { references: ['10.1/r'], citations: [] };
-        }
-      }
+        },
+      },
     };
     const papers = [makePaper({ doi: '10.1/x' })];
     const stats = await enhanceOutputPapers(papers, enhancers);
@@ -195,15 +222,21 @@ suite('search: enhanceOutputPapers (both enhancers together)', () => {
     const enhancers = {
       unpaywall: {
         email: 'me@x.com',
-        fetchByDoi: async (doi) => { seen.push(doi); return null; }
-      }
+        fetchByDoi: async (doi) => {
+          seen.push(doi);
+          return null;
+        },
+      },
     };
-    await enhanceOutputPapers([
-      makePaper({ doi: '10.1/a' }),
-      makePaper({ doi: '10.1/b' }),
-      makePaper({ title: 'no doi' }),
-      makePaper({ doi: '10.1/c' })
-    ], enhancers);
+    await enhanceOutputPapers(
+      [
+        makePaper({ doi: '10.1/a' }),
+        makePaper({ doi: '10.1/b' }),
+        makePaper({ title: 'no doi' }),
+        makePaper({ doi: '10.1/c' }),
+      ],
+      enhancers
+    );
     assertDeepEqual(seen, ['10.1/a', '10.1/b', '10.1/c']);
   });
 });

@@ -414,6 +414,17 @@ npm run test:integration                  # 端到端验收：CLI + MCP + 真实
 LIT_SEARCH_SKIP_NETWORK_TESTS=1 node test.js   # 想跳过 network case 时
 ```
 
+提交前本地检查：
+
+```bash
+npm run lint           # ESLint：代码风格、潜在错误
+npm run lint:fix       # ESLint 自动修
+npm run format         # Prettier：自动格式化全仓库
+npm run format:check   # Prettier：只检查不修改，CI 必跑
+npm run coverage       # c8 跑测试 + 生成 HTML/JSON 报告到 coverage/
+npm run coverage:check # 同上 + 检查阈值（lines≥50 / branches≥70 / functions≥50 / statements≥50）
+```
+
 - `npm test` 跑 [tests/run.js](file:///d:/code/lit-search/tests/run.js) 入口，离线、秒级，CI 每次 push / PR 必跑。
 - `npm run test:integration` 跑 [test.js](file:///d:/code/lit-search/test.js)，会**真打 OpenAlex / CrossRef / Semantic Scholar / arXiv 等**。本地无 key 时大多会 429/被拒，所以默认不在 CI 跑。
 - 真实 API key 可以从 `LIT_SEARCH_S2_API_KEY` 等环境变量读，也可以放到 `temp/local-secrets/key.json`（已 gitignore）：
@@ -427,6 +438,22 @@ LIT_SEARCH_SKIP_NETWORK_TESTS=1 node test.js   # 想跳过 network case 时
 ```bash
 node ./bin/lit-search.js "machine learning" -l 1 -s 2023 --output-dir ./temp
 ```
+
+## 代码质量
+
+提交代码前请保证 `npm run lint` 和 `npm run format:check` 都通过；CI 在 lint / format:check / test 任何一步失败时会直接拦下，不会合入 main。
+
+- **ESLint**（[eslint.config.js](file:///d:/code/lit-search/eslint.config.js)）：检查未使用变量、相等性、隐式全局变量、空块语句等。`tests/**` 下的文件放宽了 `no-unused-vars`，因为测试 stub 经常需要占位参数。
+- **Prettier**（[.prettierrc](file:///d:/code/lit-search/.prettierrc)）：单引号、100 列宽、LF 行尾。`.prettierignore` 排除了 `node_modules/`、`coverage/`、`temp/`、`package-lock.json`。
+- **.gitattributes** 强制 `* text=auto eol=lf`，避免 Windows 上 `core.autocrlf=true` 把 LF 静默改成 CRLF 引发跨平台 diff 噪音。
+- **Husky + lint-staged**（[.husky/pre-commit](file:///d:/code/lit-search/.husky/pre-commit)）：每次 `git commit` 自动对暂存文件跑 `eslint --fix` + `prettier --write`。prettier 修得动的会被自动改写进同一个 commit；ESLint 报错的（无法自动修的，如 `==`、隐式全局变量）会直接拒绝 commit。**首次 clone 后需要 `npm install` 一次让 `prepare` 脚本激活 hooks**（husky v9 会把 `core.hooksPath` 设为 `.husky/_`）。真要跳过用 `git commit --no-verify`，但 CI 会兜底拦下。
+- **c8 覆盖率**（`c8` 块 in [package.json](file:///d:/code/lit-search/package.json)）：用 V8 内建覆盖率工具跑测试，输出 `coverage/index.html` 可在浏览器逐行看未覆盖代码。CI 强制 `npm run coverage:check`，当前阈值 lines 50 / branches 70 / functions 50 / statements 50，低于阈值 PR 合不进 main。`coverage/` 已被 .gitignore 排除，不污染仓库。
+
+新增源文件 / 测试文件时，命名约定：
+
+- API client：`lib/apis/<source>.js`，导出 `create<Source>Client(config)` 工厂
+- 测试：`tests/unit/<module>.test.js`（离线） 或 `tests/e2e/<feature>.test.js`（要网络）
+- 命名空间下的工具：`lib/<feature>.js`
 
 ## 如何发版
 
@@ -474,13 +501,13 @@ git push origin main --follow-tags
 
 如果想用 release-drafter 维护的"Next Release"草稿视图（按 label 分组），给 PR 打一个 label：
 
-| Label | 在草稿 changelog 里出现在 | 触发版本号 bump |
-|---|---|---|
-| `breaking` 或 `major` | 🚨 Breaking changes | major |
-| `feat`、`enhancement` | 🚀 Features | minor |
-| `fix`、`bug` | 🐛 Bug fixes | patch |
-| `chore`、`ci`、`refactor`、`perf`、`test` | 📦 Maintenance | patch |
-| `docs` | 📝 Documentation | — |
+| Label                                     | 在草稿 changelog 里出现在 | 触发版本号 bump |
+| ----------------------------------------- | ------------------------- | --------------- |
+| `breaking` 或 `major`                     | 🚨 Breaking changes       | major           |
+| `feat`、`enhancement`                     | 🚀 Features               | minor           |
+| `fix`、`bug`                              | 🐛 Bug fixes              | patch           |
+| `chore`、`ci`、`refactor`、`perf`、`test` | 📦 Maintenance            | patch           |
+| `docs`                                    | 📝 Documentation          | —               |
 
 如果 PR 没打 label，release-drafter 默认归为 patch。手动 `npm version` 时不受 label 影响。
 
@@ -488,9 +515,12 @@ git push origin main --follow-tags
 
 `dependabot` 每周一 09:00（北京时间）自动检查 npm 依赖更新，PR 会带 `dependencies` 和 `npm` label。
 
+- **patch 升级**（如 `4.12.18 → 4.12.27`）：CI 全绿后由 [.github/workflows/dependabot-auto-merge.yml](file:///d:/code/lit-search/.github/workflows/dependabot-auto-merge.yml) 自动 squash 合并，无须人工操作。安全漏洞通常 1~3 天内闭环。
+- **minor / major 升级**：只开 PR，不自动合，由维护者读 changelog 后手动处理。
+
 CLI 表面相关的包（`commander`、`chalk`）会忽略 major 升级。`conf` 和 `inquirer` **完全忽略**任何升级（`conf 14+` 要求 Node 20，超越本项目 `engines: >=18`；`inquirer 14+` 有破坏性 prompt 变化，会让 `init` 子命令静默挂掉），需要升级时手动提 PR。
 
-⚠️ 我们**不**用 dependabot 的 `groups` 字段。`groups` 会**重新激活** `ignore` 列表里被点名要忽略的包，曾经导致 `conf` / `inquirer` 的不安全升级被自动提了 PR。修改 `.github/dependabot.yml` 时请保持这个约束。
+⚠️ 我们**不**用 dependabot 的 `groups` 字段。`groups` 会**重新激活** `ignore` 列表里被点名要忽略的包，曾经导致 `conf` / `inquirer` 的不安全升级被自动提了 PR。修改 [.github/dependabot.yml](file:///d:/code/lit-search/.github/dependabot.yml) 时请保持这个约束。
 
 ## License
 
