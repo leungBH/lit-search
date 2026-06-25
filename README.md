@@ -385,6 +385,121 @@ ontology knowledge graph semantic web
 ontology, knowledge graph, semantic web
 ```
 
+### 流式进度与取消（agent 友好）
+
+`search_literature` 默认要扫多个外部数据源，单次调用可能要 10 秒以上。lit-search 暴露两个 MCP 原语，让 agent 实时看到进度并能在用户改主意时立即取消。
+
+#### 订阅进度通知
+
+调用 `search_literature` 时传入 `_meta.progressToken`，服务端会通过 `notifications/progress` 持续回报：
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "search_literature",
+    "arguments": {
+      "query": "ontology, knowledge graph, semantic web",
+      "limit": 5,
+      "outputDir": "D:/lit-search-results"
+    },
+    "_meta": { "progressToken": "run-2026-06-25-001" }
+  }
+}
+```
+
+服务端会按 `progressToken` 分组发出形如下面的事件：
+
+```json
+{
+  "method": "notifications/progress",
+  "params": {
+    "progressToken": "run-2026-06-25-001",
+    "progress": 4,
+    "total": 10,
+    "message": "openalex · 关键词 1/1 · 完成"
+  }
+}
+```
+
+`progress` 单调递增；`message` 在以下三种语义中切换：
+
+- 关键词阶段：`关键词 i/n · 源名 · 开始/完成`
+- 源完成阶段：`源名 · ...`（含 `·` 分隔符，agent 可单独抓 per-source 事件）
+- 收尾阶段：`最终结果：...`
+
+#### 用 AbortSignal 取消
+
+Agent 端把 `AbortController.signal` 透传给 `callTool` 即可中断。一次任务只需要一个 controller：
+
+```js
+const ac = new AbortController();
+const callPromise = client.callTool(
+  {
+    name: 'search_literature',
+    arguments: { query: 'agent coordination, LLM tool use', limit: 5 },
+    _meta: { progressToken: 'run-1' },
+  },
+  undefined,
+  { signal: ac.signal, timeout: 60_000 }
+);
+
+// 用户点了「停」或者切换了话题
+ac.abort();
+```
+
+被取消时服务端返回标准化的 `CANCELLED` 错误（错误码见上文），不会留下半成品文件：
+
+```json
+{
+  "isError": true,
+  "content": [{ "type": "text", "text": "[CANCELLED] Request cancelled" }],
+  "structuredContent": {
+    "ok": false,
+    "error": { "code": "CANCELLED", "message": "...", "retryable": false }
+  }
+}
+```
+
+#### Agent 端最小集成示例
+
+```js
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+const client = new Client({ name: 'my-agent', version: '0.1.0' }, { capabilities: {} });
+const transport = new StdioClientTransport({
+  command: 'node',
+  args: ['D:/lit-search/bin/lit-search-mcp.js'],
+});
+await client.connect(transport);
+
+client.setNotificationHandler('notifications/progress', (n) => {
+  // n.params = { progressToken, progress, total, message }
+  ui.updateProgress(n.params);
+});
+
+const ac = new AbortController();
+ui.onCancel(() => ac.abort());
+
+const result = await client.callTool(
+  {
+    name: 'search_literature',
+    arguments: { query: 'agent coordination, LLM tool use', outputDir: 'D:/results' },
+    _meta: { progressToken: `run-${Date.now()}` },
+  },
+  undefined,
+  { signal: ac.signal }
+);
+```
+
+#### 注意事项
+
+- 单次研究请求对应**一次** `search_literature` 调用，不要把它拆成多个并行子任务。
+- 不订阅进度时服务端照常返回结果，只是不会发 `notifications/progress`；订阅与否由 agent 自己决定。
+- 同一 controller 可在多个 `callTool` 间复用；如果只想取消其中一次，给它单独建一个 controller 更安全。
+- `search_literature` 是阻塞的；用 `signal` + 进度 token 让用户随时能看到「搜到哪了、要等多久」并能中断，是给 agent 用户体验的关键。
+
 ## 在 Codex 中注册 MCP
 
 示例配置：

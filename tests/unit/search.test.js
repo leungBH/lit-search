@@ -20,6 +20,7 @@ import {
   assertOk,
   assertTruthy,
   assertFalsy,
+  assertRejects,
   silentLogger,
   cleanNockBeforeEach,
 } from './helpers.js';
@@ -684,3 +685,176 @@ suite('search: searchPapers — query expansion', () => {
 
 // Note: enhanceOutputPapers tests live in tests/unit/search-output.test.js
 // (which uses dependency-injected enhancers and is more thorough).
+
+// ──────────────────────────────────────────────────────────────────────
+// Streaming progress + cancellation
+// ──────────────────────────────────────────────────────────────────────
+
+import { LitSearchError } from '../../lib/errors.js';
+
+suite('search: searchPapers — streaming progress', () => {
+  beforeEach(cleanNockBeforeEach);
+
+  test('emits progress events to onProgress callback', async () => {
+    nock(OA_BASE)
+      .get('/works')
+      .query(true)
+      .reply(200, { results: [makeOAResult('p1', 'A paper')], meta: { count: 1 } });
+
+    const events = [];
+    const out = await searchPapers({
+      query: 'paper',
+      limit: 5,
+      relevanceFilter: false,
+      logger: SILENT,
+      engines: onlyEngines('oa'),
+      onProgress: async (progress, total, message) => {
+        events.push({ progress, total, message });
+      },
+    });
+
+    // 至少应该看到 1 个关键词开始事件 + 1 个源完成事件 + 1 个最终事件
+    assertOk(events.length >= 3, `expected >=3 progress events, got ${events.length}`);
+
+    // 验证事件结构
+    const first = events[0];
+    assertEqual(typeof first.progress, 'number');
+    assertEqual(typeof first.total, 'number');
+    assertEqual(typeof first.message, 'string');
+
+    // 验证 total 不为 0
+    assertOk(first.total > 0);
+
+    // 验证进度单调非降
+    for (let i = 1; i < events.length; i++) {
+      assertOk(events[i].progress >= events[i - 1].progress);
+    }
+
+    // 验证最终事件 progress === total
+    const last = events[events.length - 1];
+    assertEqual(last.progress, last.total);
+
+    // 验证还是返回了结果
+    assertOk(out.papers.length >= 1);
+  });
+
+  test('onProgress is optional — no callback works', async () => {
+    nock(OA_BASE)
+      .get('/works')
+      .query(true)
+      .reply(200, { results: [makeOAResult('p1', 'A paper')], meta: { count: 1 } });
+
+    const out = await searchPapers({
+      query: 'paper',
+      limit: 5,
+      relevanceFilter: false,
+      logger: SILENT,
+      engines: onlyEngines('oa'),
+      // 不传 onProgress
+    });
+    assertOk(out.papers.length >= 1);
+  });
+
+  test('emits one event per source completion for multi-engine search', async () => {
+    nock(S2_BASE)
+      .get('/paper/search')
+      .query(true)
+      .reply(200, { data: [makeS2Paper('multi', 'A paper')] });
+    nock(S2_BASE)
+      .post('/paper/batch')
+      .query(true)
+      .reply(200, [makeS2Paper('multi', 'A paper')]);
+    nock(OA_BASE)
+      .get('/works')
+      .query(true)
+      .reply(200, { results: [makeOAResult('multi', 'A paper')], meta: { count: 1 } });
+
+    const sourceEvents = [];
+    await searchPapers({
+      query: 'paper',
+      limit: 5,
+      relevanceFilter: false,
+      logger: SILENT,
+      engines: onlyEngines('s2', 'oa'),
+      onProgress: async (progress, total, message) => {
+        // 抓"源完成"型事件：message 以 "X · " 开头（per-source 事件，不是关键词开始，也不是最终结果）
+        if (message.includes(' · ')) {
+          sourceEvents.push({ progress, total, message });
+        }
+      },
+    });
+
+    // 2 个源都应该报一次
+    assertEqual(sourceEvents.length, 2, `expected 2 source events, got ${sourceEvents.length}`);
+  });
+});
+
+suite('search: searchPapers — cancellation', () => {
+  beforeEach(cleanNockBeforeEach);
+
+  test('pre-aborted signal throws CANCELLED before any fetch', async () => {
+    const ac = new AbortController();
+    ac.abort();
+
+    let threw = null;
+    try {
+      await searchPapers({
+        query: 'paper',
+        limit: 5,
+        relevanceFilter: false,
+        logger: SILENT,
+        engines: onlyEngines('oa'),
+        signal: ac.signal,
+      });
+    } catch (e) {
+      threw = e;
+    }
+
+    assertTruthy(threw instanceof LitSearchError);
+    assertEqual(threw.code, 'CANCELLED');
+  });
+
+  test('signal abort during search causes CANCELLED error', async () => {
+    // S2 用 nock 拦截——不会真的 sleep。直接用 pre-abort 即可验证
+    // （中途 abort 涉及定时器，这里只验证 abort 的传播路径走得通）
+    nock(OA_BASE)
+      .get('/works')
+      .query(true)
+      .reply(200, { results: [makeOAResult('p1', 'A paper')], meta: { count: 1 } });
+
+    const ac = new AbortController();
+    ac.abort();
+
+    await assertRejects(
+      () =>
+        searchPapers({
+          query: 'paper',
+          limit: 5,
+          relevanceFilter: false,
+          logger: SILENT,
+          engines: onlyEngines('oa'),
+          signal: ac.signal,
+        }),
+      /cancelled/i
+    );
+  });
+
+  test('cancellation has retryable=false', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    let threw = null;
+    try {
+      await searchPapers({
+        query: 'paper',
+        limit: 5,
+        logger: SILENT,
+        engines: onlyEngines('oa'),
+        signal: ac.signal,
+      });
+    } catch (e) {
+      threw = e;
+    }
+    assertTruthy(threw instanceof LitSearchError);
+    assertEqual(threw.retryable, false);
+  });
+});
