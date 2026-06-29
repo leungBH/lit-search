@@ -74,7 +74,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "nock": "^14.0.15",
-    "prettier": "^3.8.4"
+    "prettier": "^3.9.1"
   },
   "lint-staged": {
     "*.{js,mjs,cjs}": [
